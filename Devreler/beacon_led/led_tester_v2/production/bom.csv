@@ -1,0 +1,4 @@
+﻿Designator,Footprint,Quantity,Value,LCSC Part #
+"D1, D2, D4, D7",LED_RGB_5050-6-HandSolder,4,SMLVN6RGB,
+"J1, J2, J3",PinHeader_1x02_P2.54mm_Vertical,3,Conn_01x02_Pin,
+"R1, R2, R3, R4, R5, R6, R7, R8",0805,8,R,

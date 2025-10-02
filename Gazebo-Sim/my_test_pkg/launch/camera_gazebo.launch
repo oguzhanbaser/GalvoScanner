@@ -1,0 +1,25 @@
+<launch>
+  <!-- Gazebo boş dünyasını başlat -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui" value="true"/>
+    <arg name="headless" value="false"/>
+  </include>
+
+  <!-- Robot modelini parametre sunucusuna yükle -->
+  <param name="robot_description" 
+         command="$(find xacro)/xacro '$(find my_test_pkg)/urdf/camera_model.xacro'"/>
+
+  <!-- Robotu Gazebo'ya spawn et -->
+  <node name="spawn_urdf" 
+        pkg="gazebo_ros" 
+        type="spawn_model" 
+        args="-param robot_description -urdf -model my_robot" />
+
+  <!-- Kamera görüntüsünü görüntülemek için -->
+  <node name="image_view" 
+        pkg="rqt_image_view" 
+        type="rqt_image_view" 
+        args="/my_camera/image_raw" />
+</launch>

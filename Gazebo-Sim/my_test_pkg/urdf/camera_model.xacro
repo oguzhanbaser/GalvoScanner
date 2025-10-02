@@ -1,0 +1,81 @@
+<?xml version="1.0"?>
+<robot name="my_camera" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- Ana Gövde (Küp) -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="0.3 0.3 0.3"/> <!-- Boyut büyütüldü -->
+      </geometry>
+      <material name="blue">
+        <color rgba="0 0 1 1"/> <!-- Mavi renk -->
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.3 0.3 0.3"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="1.0"/>
+      <inertia 
+        ixx="0.001" ixy="0" ixz="0" 
+        iyy="0.001" iyz="0" 
+        izz="0.001"/>
+    </inertial>
+  </link>
+
+
+
+  <!-- Kamera -->
+  <link name="camera_link">
+    <visual>
+      <geometry>
+        <box size="0.05 0.05 0.05"/> <!-- Kamera görseli -->
+      </geometry>
+      <material name="black">
+        <color rgba="0 0 0 1"/> <!-- Siyah renk -->
+      </material>
+    </visual>
+    <inertial>
+      <mass value="0.01"/>
+      <inertia 
+        ixx="0.00001" ixy="0" ixz="0" 
+        iyy="0.00001" iyz="0" 
+        izz="0.00001"/>
+    </inertial>
+  </link>
+
+  <!-- Kamera Eklentisi (Gazebo Plugin) -->
+  <gazebo reference="camera_link">
+    <sensor type="camera" name="camera_sensor">
+      <camera>
+        <horizontal_fov>1.0472</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+      </camera>
+      <plugin name="camera_plugin" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/</namespace>
+        </ros>
+        <camera_name>my_camera</camera_name>
+        <frame_name>camera_link</frame_name>
+        <hack_baseline>0.07</hack_baseline>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- Joint'ler -->
+
+
+  <!-- Kamera tutucusuna kamerayı bağla -->
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.2 0 0.15" rpy="0 0 0"/> <!-- Silindirin ucuna yerleşim -->
+  </joint>
+
+</robot>
