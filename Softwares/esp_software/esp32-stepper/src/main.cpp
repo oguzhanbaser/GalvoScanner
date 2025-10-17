@@ -26,7 +26,7 @@
 #define m2_y 1
 #define m1_y 8
 
-#define micro_step 256
+#define micro_step 64
 
 #define homePosX 6415 * micro_step / 256 // Tweak this to get a perfect 45 deg angle as 0 position
 #define homePosY 6410 * micro_step / 256 // Tweak this to get a perfect 45 deg angle as 0 position
@@ -34,7 +34,7 @@
 TMC2209 Xaxis, Yaxis;
 AccelStepper Xaxis_step(1, step_x, dir_x);
 AccelStepper Yaxis_step(1, step_y, dir_y);
-MultiStepper steppers;
+// MultiStepper steppers;
 
 // Flag variables to indicate end-stop activation
 bool endStop1Triggered = false;
@@ -42,8 +42,8 @@ bool endStop2Triggered = false;
 
 unsigned long lastTime = 0;
 uint16_t maxSpeed = 3000 * micro_step / 256;
-uint16_t xSpeed = 300 * micro_step / 256; // Speed for X-axis
-uint16_t ySpeed = 300 * micro_step / 256; // Speed for Y-axis
+uint16_t xSpeed = 3000 * micro_step / 256; // Speed for X-axis
+uint16_t ySpeed = 3000 * micro_step / 256; // Speed for Y-axis
 uint16_t homeSpeed = 3000 * micro_step / 256;
 
 int steps_per_rot = 200 * micro_step;
@@ -63,6 +63,30 @@ struct XY
   double y;
 };
 struct XY currPos;
+
+hw_timer_t* stepTimer = nullptr;
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+TaskHandle_t stepperTaskHandle = nullptr;
+
+// ISR: sadece task'e bildirim gönder (uzun iş YAPMA!)
+void IRAM_ATTR onStepTick() {
+  BaseType_t xHigherPriorityWoken = pdFALSE;
+  vTaskNotifyGiveFromISR(stepperTaskHandle, &xHigherPriorityWoken);
+  if (xHigherPriorityWoken) portYIELD_FROM_ISR();
+}
+
+// Yüksek öncelikli görev: her tetikte run() çağır
+void stepperTask(void* pv) {
+  for (;;) {
+    // Timer bildirimi gelene kadar bekle
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    // AccelStepper zamanlamasını kendi mikros() tabanlı mekanizmasıyla yapar.
+    // Her tetikte bir veya sıfır/çok step atabilir.
+    Xaxis_step.run();
+    Yaxis_step.run();
+  }
+}
 
 // Interrupt service routines (ISRs)
 void handleEndStop1()
@@ -122,13 +146,15 @@ void setup()
   //  // Initialize stepper motors
   Xaxis_step.setMaxSpeed(maxSpeed);
   Xaxis_step.setSpeed(xSpeed);
+  Xaxis_step.setMinPulseWidth(2);
   Xaxis_step.setCurrentPosition(0);
   Yaxis_step.setMaxSpeed(maxSpeed);
   Yaxis_step.setSpeed(ySpeed);
   Yaxis_step.setCurrentPosition(0);
+  Yaxis_step.setMinPulseWidth(2);
 
-  steppers.addStepper(Xaxis_step);
-  steppers.addStepper(Yaxis_step);
+  // steppers.addStepper(Xaxis_step);
+  // steppers.addStepper(Yaxis_step);
 
   Serial.begin(115200); // Initialize serial communication at 115200 baud rate
 
@@ -188,22 +214,21 @@ void setup()
   Xaxis.enableCoolStep();
   Yaxis.enableCoolStep();
 
-  Xaxis.setStealthChopDurationThreshold(0);
-  Yaxis.setStealthChopDurationThreshold(0);
+  // Xaxis.setStealthChopDurationThreshold(0);
+  // Yaxis.setStealthChopDurationThreshold(0);
 
   // Xaxis.disableCoolStep();
   // Yaxis.disableCoolStep();
 
-  Xaxis.disableStealthChop();
-  Yaxis.disableStealthChop();
+  // Xaxis.disableStealthChop();
+  // Yaxis.disableStealthChop();
 
-  // for(uint32_t i = 0; i < 12800 * 2; i++)
-  // {
-  //   digitalWrite(step_x, !digitalRead(step_x)); // Toggle direction for X-axis
-  //   delayMicroseconds(10);
-  // }
+  xTaskCreatePinnedToCore(stepperTask, "stepperTask", 4096, nullptr, configMAX_PRIORITIES - 1, &stepperTaskHandle, 0);
 
-  // homing();
+  stepTimer = timerBegin(1, 80, true);        // timer 1, prescaler 80, countUp
+  timerAttachInterrupt(stepTimer, &onStepTick, true);
+  timerAlarmWrite(stepTimer, 50, true);       // 50 µs = 20 kHz
+  timerAlarmEnable(stepTimer);
 
   Xaxis_step.setSpeed(xSpeed);
   Yaxis_step.setSpeed(ySpeed);
@@ -253,28 +278,19 @@ void loop()
       int xdist = Serial.parseInt();
       int ydist = Serial.parseInt();
       move_To(xdist, ydist); // Call the move_To function with the received coordinates
+    }else if(command == 'T')
+    {
+      int xval = Serial.parseInt();
+      int yval = Serial.parseInt();
+      Xaxis_step.setCurrentPosition(xval);
+      Yaxis_step.setCurrentPosition(yval);
     }
   }
-
-  // move_To(-180, -180);
-  // delay(5);
-
-  // for(int i = -180; i <= 0; i++)
-  // {
-  //   move_To(i, i);
-  //   delay(20);
-  // }
-
-  // move_To(-100, 0);
-  // delay(5);
-
-  // Xaxis.run(); // Run the X-axis motor
-  // Yaxis.run(); // Run the Y-axis motor
 }
 
-int stepSpeed = 100;
 void homing()
 {
+  vTaskSuspend(stepperTaskHandle); // Suspend the stepper task during homing
   detachInterrupt(digitalPinToInterrupt(endswitchX));
   detachInterrupt(digitalPinToInterrupt(endswitchY));
 
@@ -321,9 +337,13 @@ void homing()
   // Attach interrupts to end-stop pins
   attachInterrupt(digitalPinToInterrupt(endswitchX), handleEndStop1, FALLING);
   attachInterrupt(digitalPinToInterrupt(endswitchY), handleEndStop2, FALLING);
+  vTaskResume(stepperTaskHandle); // Resume the stepper task after homing
 
-  Xaxis_step.setSpeed(xSpeed);
-  Yaxis_step.setSpeed(ySpeed);
+  Xaxis_step.setMaxSpeed(maxSpeed);
+  Xaxis_step.setAcceleration(2000); // İvme değerini ihtiyaca göre ayarlayın
+  Yaxis_step.setMaxSpeed(maxSpeed);
+  Yaxis_step.setAcceleration(2000);
+
 }
 
 #define D 95 // orthogonal distance of "last" mirror and projection plane
@@ -334,7 +354,6 @@ uint32_t xStepPosOld = 0, yStepPosOld = 0;
 
 void move_To(double x, double y)
 {
-
   struct XY angle;
   angle.y = (atan(y / D)) * 57.2957795131;
   angle.x = (atan(x / (E + sqrt(pow(D, 2) + pow(y, 2))))) * 57.2957795131;
@@ -349,38 +368,17 @@ void move_To(double x, double y)
   Serial.println("Y angle: " + String(angle.y));
   Serial.println("-------------------------");
 
-  long dx = abs(targetX - currX);
-  long dy = abs(targetY - currY);
-  int sx = (targetX > currX) ? 1 : -1;
-  int sy = (targetY > currY) ? 1 : -1;
+  // AccelStepper ile hedef pozisyonlara hareket et
+  Xaxis_step.moveTo(targetX);
+  Yaxis_step.moveTo(targetY);
 
-  digitalWrite(dir_x, (sx > 0) ? HIGH : LOW);
-  digitalWrite(dir_y, (sy > 0) ? HIGH : LOW);
-
-  long err = dx - dy;
-  long e2;
-
-  while (currX != targetX || currY != targetY)
+  // İki ekseni aynı anda hareket ettir
+  while (Xaxis_step.distanceToGo() != 0 || Yaxis_step.distanceToGo() != 0)
   {
-    e2 = 2 * err;
-    if (e2 > -dy && currX != targetX)
-    {
-      err -= dy;
-      currX += sx;
-      digitalWrite(step_x, HIGH);
-      delayMicroseconds(1500); // Hız ayarı
-      digitalWrite(step_x, LOW);
-      delayMicroseconds(1500);
-    }
-    if (e2 < dx && currY != targetY)
-    {
-      err += dx;
-      currY += sy;
-      digitalWrite(step_y, HIGH);
-      delayMicroseconds(1500);
-      digitalWrite(step_y, LOW);
-      delayMicroseconds(1500);
-    }
+    // Xaxis_step.run();
+    // Yaxis_step.run();
   }
 
-}
+  currX = targetX;
+  currY = targetY;
+} 

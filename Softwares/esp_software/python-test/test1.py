@@ -1,7 +1,7 @@
-import serial
+import serial, random
 from time import sleep
 
-ser = serial.Serial('COM5', 115200, timeout=1, dsrdtr=True)  # Open the serial port with a baud rate of 9600
+ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1, dsrdtr=True)  # Open the serial port with a baud rate of 9600
 
 def move_to_position(x, y):
     # Function to move the servo to a specific position
@@ -36,11 +36,24 @@ while True:
         
     # sleep(2)
 
-    move_to_position(-5, -5)
-    sleep(1)
-    move_to_position(-5, 0)
-    sleep(1)
-    move_to_position(0, 0)
-    sleep(1)
-    move_to_position(0, -5)
-    sleep(1)
+    move_arr = [(-40, -12), (-40, -2), (-30, -2), (-30, -12), (-30, -17), (-40, -17)]
+    old_pos = (0, 0)
+    for i in range(len(move_arr)):
+        pos = random.randint(0, len(move_arr)-1)
+        if pos != old_pos:
+            old_pos = pos
+            move_to_position(move_arr[pos][0], move_arr[pos][1])
+            sleep(2)
+
+    # move_to_position(-40, -12)
+    # sleep(2)
+    # move_to_position(-40, -2)
+    # sleep(2)
+    # move_to_position(-30, -2)
+    # sleep(2)
+    # move_to_position(-30, -12)
+    # sleep(2)
+    # move_to_position(-30, -17)
+    # sleep(2)
+    # move_to_position(-40, -17)
+    # sleep(2)
