@@ -1,0 +1,10 @@
+{
+    "H_MIN": 115,
+    "H_MAX": 154,
+    "S_MIN": 40,
+    "S_MAX": 150,
+    "V_MIN": 92,
+    "V_MAX": 250,
+    "MIN_ALAN_BASLANGIC": 5,
+    "MAX_ALAN_BASLANGIC": 5000
+}

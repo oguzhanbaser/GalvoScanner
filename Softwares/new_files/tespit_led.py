@@ -25,7 +25,7 @@ KERNEL = np.ones((5,5), np.uint8)
 
 clicked_hsv = (0, 0, 0)
 PENCERE_ADI = "1. Canli Akis ve Tespit"
-SETTINGS_FILE = "trackbar_settings.json"
+SETTINGS_FILE = "led_trackbar_settings.json"
 
 
 MAX_ALAN_FAKTOR_UST = 2.0 

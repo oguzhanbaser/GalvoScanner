@@ -212,7 +212,7 @@ def process_image(x=None):
 settings = load_settings()
 
 # Resmi yükle
-frame_original = cv2.imread('C:\\Users\\baser_7rlgtle\\Desktop\\MyFolders\\myGithub\\GalvoScanner\\Softwares\\new_files\\image.png')
+frame_original = cv2.imread('C:\\Users\\baser-huawei\\Documents\\GitHub\\GalvoScanner\\Softwares\\new_files\\image.jpg')
 if frame_original is None:
     print("Resim yüklenemedi.")
     exit()
