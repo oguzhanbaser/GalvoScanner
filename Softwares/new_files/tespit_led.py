@@ -82,10 +82,11 @@ STREAM_URL = os.getenv("STREAM_URL", "http://192.168.19.221:5000/video_roi")  # 
 cap = cv2.VideoCapture(STREAM_URL)
 
 while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("Kamera akişi okunamadi.")
-        break
+    # ret, frame = cap.read()
+    frame = cv2.imread("C:\\Users\\baser-huawei\\Documents\\GitHub\\GalvoScanner\\Softwares\\new_files\\led_test_image_4.jpg")
+    # if not ret:
+    #     print("Kamera akişi okunamadi.")
+    #     break
     
     h, w, _ = frame.shape
     yarim_yukseklik = h // 2
@@ -119,6 +120,8 @@ while True:
     blurred = cv2.medianBlur(frame_inpainted, 5)
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv, BLUE_LOWER, BLUE_UPPER)
+
+    # cv2.imshow("1. Renk Izolasyon Maskesi", mask)
     
     # Debugging: Print HSV range values to ensure trackbars are updating
     print(f"HSV Range: H_MIN={h_min}, H_MAX={h_max}, S_MIN={s_min}, S_MAX={s_max}, V_MIN={v_min}, V_MAX={v_max}")

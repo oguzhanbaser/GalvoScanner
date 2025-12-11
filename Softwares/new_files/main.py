@@ -30,7 +30,7 @@ if __name__ == "__main__":
     cap = cv2.VideoCapture("http://192.168.19.221:5000/video_roi")
 
     try:
-        detector = MyDetector(settings_file="laser_trackbar_settings.json")  # 0 = varsayılan kamera
+        detector = MyDetector(laser_settings_file="laser_trackbar_settings.json", led_settings_file="led_trackbar_settings.json")  # 0 = varsayılan kamera
 
         # detector.run(source_type='video')
 
@@ -39,9 +39,19 @@ if __name__ == "__main__":
             if not ret:
                 print("Video sona erdi veya okunamadı.")
                 break
-            [cx, cy] = detector.process_image(frame)
-            print(f"Laser Koordinatları: X={cx}, Y={cy}")
-            cv2.imshow('Orijinal', detector.frame_inpainted)
+            
+            laser_point = detector.process_image(frame)
+            led_points = detector.detect_leds(frame)
+
+            cv2.imshow('LED Tespit', led_points['annotated_frame'])
             cv2.waitKey(10)
+
+            if laser_point is not None:
+                print(f"Laser Koordinatları: X={laser_point['center_point'][0]}, Y={laser_point['center_point'][1]}")
+                cv2.imshow('Orijinal', laser_point['annotated_frame'])
+                cv2.waitKey(10)
+            else:
+                cv2.imshow('Orijinal', frame)
+                cv2.waitKey(10)
     except ValueError as e:
         print(f"Hata: {e}")

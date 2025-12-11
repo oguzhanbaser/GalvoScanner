@@ -10,16 +10,16 @@ class MyDetector:
     HSV renk uzayında çalışır ve tıklama ile renk seçimi yapar.
     """
     
-    def __init__(self, settings_file="laser_trackbar_settings.json", led_settings_file="led_settings.json"):
+    def __init__(self, laser_settings_file="laser_trackbar_settings.json", led_settings_file="led_settings.json"):
         """
         MyDetector sınıfını başlatır.
         
         Args:
-            settings_file: Laser ayarlarının kaydedileceği JSON dosyası
+            laser_settings_file: Laser ayarlarının kaydedileceği JSON dosyası
             led_settings_file: LED ayarlarının kaydedileceği JSON dosyası
         """
         # Sabitler
-        self.SETTINGS_FILE = settings_file
+        self.LASER_SETTINGS_FILE = laser_settings_file
         self.LED_SETTINGS_FILE = led_settings_file
         self.H_TOLERANCE = 15
         self.S_TOLERANCE = 80
@@ -93,8 +93,8 @@ class MyDetector:
     
     def load_settings(self):
         """Laser ayarlarını JSON dosyasından yükler."""
-        if os.path.exists(self.SETTINGS_FILE):
-            with open(self.SETTINGS_FILE, "r") as file:
+        if os.path.exists(self.LASER_SETTINGS_FILE):
+            with open(self.LASER_SETTINGS_FILE, "r") as file:
                 return json.load(file)
         return {}
     
@@ -205,7 +205,7 @@ class MyDetector:
         Görüntüyü işler ve laser noktalarını tespit eder.
         """
         if pFrame is None:
-            return
+            return None
         
         frame = pFrame.copy()
 
@@ -320,7 +320,7 @@ class MyDetector:
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         else:
             cx, cy = -1, -1
-            return cx, cy
+            return None
         
         # Durum bilgisi
         durum = f"Laser Sayisi: {len(laser_merkezleri)}"
@@ -332,7 +332,12 @@ class MyDetector:
         # cv2.imshow('Maske', mask)
         # cv2.imshow('Inpaint Maskesi', mask_parlak)
 
-        return cx, cy
+        # return cx, cy
+        return {
+            'center_point': [cx, cy],
+            'annotated_frame': frame_inpainted,
+            'mask': mask
+        }
     
     def detect_leds(self, frame):
         """
@@ -394,8 +399,8 @@ class MyDetector:
                 filtered_mask = cv2.bitwise_or(filtered_mask, region_mask)
         
         mask = filtered_mask
-        
-        # Konturları bul
+
+        # Konturları bul - PARLALIK MASKESİ ÜZERİNDEN (tespit_led.py ile aynı)
         contours, _ = cv2.findContours(inpaint_mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         led_merkezleri = []
         
@@ -416,7 +421,7 @@ class MyDetector:
             if dairesellik < dairesellik_esigi:
                 continue
             
-            # Ortalama HSV kontrolü
+            # Ortalama HSV kontrolü - tespit_led.py ile aynı
             mask_c = np.zeros_like(mask)
             cv2.drawContours(mask_c, [c], -1, 255, -1)
             mean_s = cv2.mean(hsv[:, :, 1], mask=mask_c)[0]
