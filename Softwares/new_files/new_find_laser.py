@@ -44,7 +44,7 @@ def get_hsv_at_click(event, x, y, flags, param):
     elif event == cv2.EVENT_LBUTTONDOWN:
         bgr_pixel = frame_original[y, x]
         hsv_pixel = cv2.cvtColor(np.uint8([[bgr_pixel]]), cv2.COLOR_BGR2HSV)[0][0]
-        h, s, v = hsv_pixel
+        h, s, v = int(hsv_pixel[0]), int(hsv_pixel[1]), int(hsv_pixel[2])
         
         print("=============================================")
         print(f"RENK SEÇİLDİ - Piksel: X={x}, Y={y}")
@@ -69,18 +69,18 @@ def get_hsv_at_click(event, x, y, flags, param):
         else:
             # Normal renk aralığı
             h_min = max(0, h - H_TOLERANCE)
-            h_max = min(180, h + H_TOLERANCE)
+            h_max = min(179, h + H_TOLERANCE)  # H max 179
             h2_min = 170
             h2_max = 180
             print(f"Normal aralık seçildi: H={h_min}-{h_max}")
         
-        # S ve V aralıkları
+        # S ve V aralıkları - sınırları kontrol et
         s_min = max(0, s - S_TOLERANCE)
         s_max = min(255, s + S_TOLERANCE)
         v_min = max(0, v - V_TOLERANCE)
         v_max = min(255, v + V_TOLERANCE)
         
-        # Trackbar'ları güncelle
+        # Trackbar'ları güncelle (int değerler olarak)
         cv2.setTrackbarPos('H Min', 'Ayarlar', int(h_min))
         cv2.setTrackbarPos('H Max', 'Ayarlar', int(h_max))
         cv2.setTrackbarPos('S Min', 'Ayarlar', int(s_min))
@@ -93,7 +93,7 @@ def get_hsv_at_click(event, x, y, flags, param):
         print(f"Yeni aralıklar: H=[{h_min}-{h_max}], S=[{s_min}-{s_max}], V=[{v_min}-{v_max}]")
         print("=============================================")
         
-        # Görüntüyü yeniden işle
+        # Görüntüyü hemen yeniden işle
         process_image()
 
 # Trackbar callback - her değişiklikte görüntüyü güncelle
@@ -212,7 +212,7 @@ def process_image(x=None):
 settings = load_settings()
 
 # Resmi yükle
-frame_original = cv2.imread('C:\\Users\\baser-huawei\\Documents\\GitHub\\GalvoScanner\\Softwares\\new_files\\image.jpg')
+frame_original = cv2.imread('C:\\Users\\baser_7rlgtle\\Desktop\\MyFolders\\myGithub\\GalvoScanner\\ss_led_laser.png')
 if frame_original is None:
     print("Resim yüklenemedi.")
     exit()
@@ -236,17 +236,17 @@ print("=" * 60)
 def nothing(x):
     process_image()
 
-# HSV trackbar'ları oluştur (nothing callback ile)
-cv2.createTrackbar('H Min', 'Ayarlar', settings.get('H_MIN', 0), 180, nothing)
-cv2.createTrackbar('H Max', 'Ayarlar', settings.get('H_MAX', 10), 180, nothing)
-cv2.createTrackbar('S Min', 'Ayarlar', settings.get('S_MIN', 120), 255, nothing)
-cv2.createTrackbar('S Max', 'Ayarlar', settings.get('S_MAX', 255), 255, nothing)
-cv2.createTrackbar('V Min', 'Ayarlar', settings.get('V_MIN', 70), 255, nothing)
-cv2.createTrackbar('V Max', 'Ayarlar', settings.get('V_MAX', 255), 255, nothing)
+# HSV trackbar'ları oluştur (nothing callback ile) - H max değeri 179 olmalı
+cv2.createTrackbar('H Min', 'Ayarlar', min(settings.get('H_MIN', 0), 179), 179, nothing)
+cv2.createTrackbar('H Max', 'Ayarlar', min(settings.get('H_MAX', 10), 179), 179, nothing)
+cv2.createTrackbar('S Min', 'Ayarlar', min(settings.get('S_MIN', 120), 255), 255, nothing)
+cv2.createTrackbar('S Max', 'Ayarlar', min(settings.get('S_MAX', 255), 255), 255, nothing)
+cv2.createTrackbar('V Min', 'Ayarlar', min(settings.get('V_MIN', 70), 255), 255, nothing)
+cv2.createTrackbar('V Max', 'Ayarlar', min(settings.get('V_MAX', 255), 255), 255, nothing)
 
 # İkinci kırmızı aralık için
-cv2.createTrackbar('H2 Min', 'Ayarlar', settings.get('H2_MIN', 170), 180, nothing)
-cv2.createTrackbar('H2 Max', 'Ayarlar', settings.get('H2_MAX', 180), 180, nothing)
+cv2.createTrackbar('H2 Min', 'Ayarlar', min(settings.get('H2_MIN', 170), 179), 179, nothing)
+cv2.createTrackbar('H2 Max', 'Ayarlar', min(settings.get('H2_MAX', 180), 179), 179, nothing)
 
 # Diğer parametreler
 cv2.createTrackbar('Min Alan', 'Ayarlar', settings.get('MIN_ALAN', 5), 500, nothing)

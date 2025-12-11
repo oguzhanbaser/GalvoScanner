@@ -341,7 +341,7 @@ class MyDetector:
     
     def detect_leds(self, frame):
         """
-        Frame üzerinde LED tespiti yapar (tespit_led_new.py'den uyarlanmış).
+        Frame üzerinde LED tespiti yapar (tespit_led.py'den uyarlanmış).
         
         Args:
             frame: İşlenecek görüntü frame'i (BGR formatında)
@@ -376,19 +376,19 @@ class MyDetector:
         lower_bound = (h_min, s_min, v_min)
         upper_bound = (h_max, s_max, v_max)
         
-        # PIXEL SUPPLEMENTATION (Inpainting)
+        # PIXEL SUPPLEMENTATION (Inpainting) - tespit_led.py ile aynı
         gray = cv2.cvtColor(frame_processed, cv2.COLOR_BGR2GRAY)
-        _, inpaint_mask = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)
-        frame_inpainted = cv2.inpaint(frame_processed, inpaint_mask, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
+        _, mask_parlak = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)
+        frame_inpainted = cv2.inpaint(frame_processed, mask_parlak, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
         
-        # Blur ve HSV dönüşümü
+        # Blur ve HSV dönüşümü - tespit_led.py ile aynı
         blurred = cv2.medianBlur(frame_inpainted, 5)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         
-        # Renk maskesi
+        # Renk maskesi - tespit_led.py ile aynı
         mask = cv2.inRange(hsv, lower_bound, upper_bound)
         
-        # Connected Components ile filtreleme
+        # Connected Components ile filtreleme - tespit_led.py ile aynı
         num_labels, labels = cv2.connectedComponents(mask)
         filtered_mask = np.zeros_like(mask, dtype=np.uint8)
         
@@ -400,11 +400,11 @@ class MyDetector:
         
         mask = filtered_mask
 
-        # Konturları bul - PARLALIK MASKESİ ÜZERİNDEN (tespit_led.py ile aynı)
-        contours, _ = cv2.findContours(inpaint_mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Konturları bul - PARLALIK MASKESİ ÜZERİNDEN (tespit_led.py ile TAM AYNI)
+        contours, _ = cv2.findContours(mask_parlak.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         led_merkezleri = []
         
-        # Her konturu işle
+        # Her konturu işle - tespit_led.py ile aynı mantık
         for c in contours:
             area = cv2.contourArea(c)
             
@@ -421,12 +421,15 @@ class MyDetector:
             if dairesellik < dairesellik_esigi:
                 continue
             
-            # Ortalama HSV kontrolü - tespit_led.py ile aynı
+            # Ortalama HSV kontrolü - tespit_led.py ile TAM AYNI
+            # NOT: mask değil, renk maskesi olmayan genel mask kullanılıyor
             mask_c = np.zeros_like(mask)
             cv2.drawContours(mask_c, [c], -1, 255, -1)
+            mean_h = cv2.mean(hsv[:, :, 0], mask=mask_c)[0]
             mean_s = cv2.mean(hsv[:, :, 1], mask=mask_c)[0]
             mean_v = cv2.mean(hsv[:, :, 2], mask=mask_c)[0]
             
+            # tespit_led.py ile aynı eşik değerleri
             if mean_s < 100 or mean_v < 50:
                 continue
             
@@ -437,7 +440,7 @@ class MyDetector:
                 cY = int(M["m01"] / M["m00"])
                 led_merkezleri.append((cX, cY))
         
-        # X koordinatına göre sırala ve maksimum sayıda tut
+        # X koordinatına göre sırala ve maksimum sayıda tut - tespit_led.py ile aynı
         led_merkezleri.sort(key=lambda item: item[0])
         led_merkezleri = led_merkezleri[:max_led_sayisi]
         
@@ -448,13 +451,54 @@ class MyDetector:
             toplam_y = sum([y for x, y in led_merkezleri])
             center_point = (int(toplam_x / len(led_merkezleri)), int(toplam_y / len(led_merkezleri)))
         
+
+        if len(led_merkezleri) > 0:
+        
+            nokta_koordinatlari = []
+            etiket_renkleri = [(0, 0, 255), (0, 0, 0), (128, 0, 128), (255, 0, 0)] 
+
+            
+            for i, (cX, cY) in enumerate(led_merkezleri):
+                led_no = i + 1
+                etiket_renk = etiket_renkleri[i % len(etiket_renkleri)]
+                nokta_koordinatlari.append((cX, cY))
+                
+                b, g, r = frame_inpainted[cY, cX]
+                parlaklik_toplami = r + g + b
+                metin_renk = (0, 0, 0) if parlaklik_toplami > 350 else (255, 255, 255)
+                
+                print(f"LED {led_no}: X={cX}, Y={cY}")
+                cv2.putText(frame_inpainted, f"LED {led_no}", (cX - 30, cY - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, metin_renk, 2)
+                cv2.circle(frame_inpainted, (cX, cY), 5, etiket_renk, -1)
+
+            
+            if len(nokta_koordinatlari) >= 2:
+                for i in range(len(nokta_koordinatlari) - 1):
+                    cv2.line(frame_inpainted, nokta_koordinatlari[i], nokta_koordinatlari[i+1], (0, 255, 255), 2)
+                if len(nokta_koordinatlari) == 4:
+                    cv2.line(frame_inpainted, nokta_koordinatlari[3], nokta_koordinatlari[0], (0, 255, 255), 2)
+
+            
+            toplam_x = sum([x for x, y in led_merkezleri])
+            toplam_y = sum([y for x, y in led_merkezleri])
+            orta_nokta = (int(toplam_x / len(led_merkezleri)), int(toplam_y / len(led_merkezleri)))
+            cv2.circle(frame_inpainted, orta_nokta, 5, (255, 255, 0), -1)
+            cv2.putText(frame_inpainted, "Orta Nokta", (orta_nokta[0] + 10, orta_nokta[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+            print(f"Orta Nokta: X={orta_nokta[0]}, Y={orta_nokta[1]}")
+            print("---------------------------------------------")
+
+        
+        durum = "4 LED TESPIT EDILDI!" if len(led_merkezleri) == 4 else f"LED Sayisi: {len(led_merkezleri)}"
+        renk = (0, 255, 0) if len(led_merkezleri) == 4 else (0, 0, 255)
+        cv2.putText(frame_inpainted, durum, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, renk, 2)
+
         return {
             'led_coordinates': led_merkezleri,
             'center_point': center_point,
             'led_count': len(led_merkezleri),
             'annotated_frame': frame_inpainted,
             'mask': mask,
-            'inpaint_mask': inpaint_mask
+            'inpaint_mask': mask_parlak
         }
     
     def run(self, source_type='image'):

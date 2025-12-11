@@ -78,15 +78,17 @@ V_MIN = settings.get("V_MIN", V_MIN)
 V_MAX = settings.get("V_MAX", V_MAX)
 MIN_ALAN_BASLANGIC = settings.get("MIN_ALAN_BASLANGIC", MIN_ALAN_BASLANGIC)
 MAX_ALAN_BASLANGIC = settings.get("MAX_ALAN_BASLANGIC", MAX_ALAN_BASLANGIC)
-STREAM_URL = os.getenv("STREAM_URL", "http://192.168.19.221:5000/video_roi")  # Varsayılan olarak 0 (webcam)
-cap = cv2.VideoCapture(STREAM_URL)
+# STREAM_URL = os.getenv("STREAM_URL", "http://192.168.19.221:5000/video_roi")  # Varsayılan olarak 0 (webcam)
+# cap = cv2.VideoCapture(STREAM_URL)
 
 while True:
     # ret, frame = cap.read()
-    frame = cv2.imread("C:\\Users\\baser-huawei\\Documents\\GitHub\\GalvoScanner\\Softwares\\new_files\\led_test_image_4.jpg")
     # if not ret:
     #     print("Kamera akişi okunamadi.")
     #     break
+
+    
+    frame = cv2.imread("C:\\Users\\baser_7rlgtle\\Desktop\\MyFolders\\myGithub\\GalvoScanner\\ss_led_laser.png")
     
     h, w, _ = frame.shape
     yarim_yukseklik = h // 2

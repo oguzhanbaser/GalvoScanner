@@ -27,7 +27,7 @@ if __name__ == "__main__":
     
     # ÖRNEK 3: Kamera ile kullanım (yorumlu)
 
-    cap = cv2.VideoCapture("http://192.168.19.221:5000/video_roi")
+    # cap = cv2.VideoCapture("http://192.168.19.221:5000/video_roi")
 
     try:
         detector = MyDetector(laser_settings_file="laser_trackbar_settings.json", led_settings_file="led_trackbar_settings.json")  # 0 = varsayılan kamera
@@ -35,10 +35,12 @@ if __name__ == "__main__":
         # detector.run(source_type='video')
 
         while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("Video sona erdi veya okunamadı.")
-                break
+            # ret, frame = cap.read()
+            # if not ret:
+            #     print("Video sona erdi veya okunamadı.")
+            #     break
+
+            frame = cv2.imread("C:\\Users\\baser_7rlgtle\\Desktop\\MyFolders\\myGithub\\GalvoScanner\\ss_led_laser.png")
             
             laser_point = detector.process_image(frame)
             led_points = detector.detect_leds(frame)
