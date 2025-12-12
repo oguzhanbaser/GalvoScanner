@@ -65,7 +65,7 @@ class MyDetector:
         }
         
         # Laser ayarlarını yükle
-        self.settings = self.load_settings()
+        self.settings = self.load_laser_settings()
         if self.settings:
             self.h_min = self.settings.get('H_MIN', 0)
             self.h_max = self.settings.get('H_MAX', 10)
@@ -91,7 +91,7 @@ class MyDetector:
         with open(self.SETTINGS_FILE, "w") as file:
             json.dump(settings, file)
     
-    def load_settings(self):
+    def load_laser_settings(self):
         """Laser ayarlarını JSON dosyasından yükler."""
         if os.path.exists(self.LASER_SETTINGS_FILE):
             with open(self.LASER_SETTINGS_FILE, "r") as file:
@@ -198,9 +198,9 @@ class MyDetector:
             print("="*60 + "\n")
             
             # Görüntüyü yeniden işle
-            self.process_image()
+            self.detect_laser()
     
-    def process_image(self, pFrame):
+    def detect_laser(self, pFrame):
         """
         Görüntüyü işler ve laser noktalarını tespit eder.
         """
@@ -391,6 +391,8 @@ class MyDetector:
         # Connected Components ile filtreleme - tespit_led.py ile aynı
         num_labels, labels = cv2.connectedComponents(mask)
         filtered_mask = np.zeros_like(mask, dtype=np.uint8)
+
+        # cv2.imshow('maskeee', frame_inpainted)
         
         for label in range(1, num_labels):
             region_mask = (labels == label).astype("uint8") * 255
@@ -403,10 +405,12 @@ class MyDetector:
         # Konturları bul - PARLALIK MASKESİ ÜZERİNDEN (tespit_led.py ile TAM AYNI)
         contours, _ = cv2.findContours(mask_parlak.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         led_merkezleri = []
+        areas = []
         
         # Her konturu işle - tespit_led.py ile aynı mantık
         for c in contours:
             area = cv2.contourArea(c)
+            areas.append(area)
             
             # Alan kontrolü
             if area < min_alan or area > max_alan:
@@ -518,7 +522,7 @@ class MyDetector:
         cv2.namedWindow('Orijinal')
         
         # Mouse callback ayarla
-        cv2.setMouseCallback('Orijinal', self.get_hsv_at_click)
+        # cv2.setMouseCallback('Orijinal', self.get_hsv_at_click)
         
         # Kullanım talimatı yazdır
         print("=" * 60)

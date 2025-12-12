@@ -97,7 +97,7 @@ def detect_leds(frame, params=None):
     # Konturları bul
     contours, _ = cv2.findContours(inpaint_mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     led_merkezleri = []
-    
+
     # Her konturu işle
     for c in contours:
         area = cv2.contourArea(c)
@@ -322,7 +322,8 @@ class LEDDetectorApp:
                 print(f"\rTespit: {led_count} LED", end="", flush=True)
             
             # Görüntüleri göster
-            cv2.imshow(self.window_name, annotated_frame)
+            cv2.imshow(self.window_name, frame)
+            cv2.imshow("annotated_frame", annotated_frame)
             cv2.imshow("Maske", mask)
             cv2.imshow("Inpaint Maskesi", inpaint_mask)
             

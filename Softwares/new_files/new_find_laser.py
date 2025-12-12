@@ -140,13 +140,21 @@ def process_image(x=None):
     # Kırmızı renk için HSV aralıkları
     lower_red1 = np.array([h_min, s_min, v_min])
     upper_red1 = np.array([h_max, s_max, v_max])
-    lower_red2 = np.array([h2_min, s_min, v_min])
-    upper_red2 = np.array([h2_max, s_max, v_max])
     
     # Maskeler oluştur
     mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-    mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-    mask = mask1 + mask2
+    
+    # İkinci aralık sadece kırmızı renk için (H <= 10 veya H >= 170)
+    # Diğer renkler için sadece mask1 kullan
+    if (h_min <= 10 and h_max <= 10) or (h_min >= 170 or h_max >= 170):
+        # Kırmızı renk tespit ediliyor - iki aralık birleştir
+        lower_red2 = np.array([h2_min, s_min, v_min])
+        upper_red2 = np.array([h2_max, s_max, v_max])
+        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        mask = mask1 + mask2
+    else:
+        # Diğer renkler - sadece tek aralık kullan
+        mask = mask1
     
     # Connected Components ile filtreleme
     num_labels, labels = cv2.connectedComponents(mask)
@@ -204,18 +212,23 @@ def process_image(x=None):
     cv2.putText(frame_inpainted, durum, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, renk, 2)
     
     # Sonuçları göster
-    cv2.imshow('Orijinal', frame_inpainted)
+    cv2.imshow('Orijinal', frame)
+    cv2.imshow('İşlenmiş', frame_inpainted)
     cv2.imshow('Maske', mask)
     cv2.imshow('Inpaint Maskesi', mask_parlak)
 
 # Kaydedilmiş ayarları yükle
 settings = load_settings()
 
-# Resmi yükle
-frame_original = cv2.imread('C:\\Users\\baser_7rlgtle\\Desktop\\MyFolders\\myGithub\\GalvoScanner\\ss_led_laser.png')
-if frame_original is None:
-    print("Resim yüklenemedi.")
+# Kamera bağlantısını aç
+STREAM_URL = os.getenv("STREAM_URL", "http://192.168.19.221:5000/video_roi")
+cap = cv2.VideoCapture(STREAM_URL)
+
+if not cap.isOpened():
+    print(f"Kamera açılamadı: {STREAM_URL}")
     exit()
+
+print(f"Kamera bağlantısı kuruldu: {STREAM_URL}")
 
 # Trackbar penceresi oluştur
 cv2.namedWindow('Ayarlar')
@@ -254,11 +267,22 @@ cv2.createTrackbar('Max Alan', 'Ayarlar', settings.get('MAX_ALAN', 5000), 10000,
 cv2.createTrackbar('Parlaklik Esik', 'Ayarlar', settings.get('PARLAKLIK_ESIK', 225), 255, nothing)
 cv2.createTrackbar('Dairesellik x100', 'Ayarlar', settings.get('DAIRESELLIK_ESIGI', 40), 100, nothing)
 
-# İlk görüntüyü işle
-process_image()
-
-# 'q' tuşuna basılana kadar bekle
+# Ana döngü - kamera görüntüsünü işle
 while True:
+    # Kameradan frame oku
+    ret, frame = cap.read()
+    if not ret:
+        print("Kamera görüntüsü okunamadı.")
+        break
+    
+    # Frame'i yeniden boyutlandır (opsiyonel)
+    # frame = cv2.resize(frame, (640, 480))
+    frame_original = frame.copy()
+    
+    # Görüntüyü işle
+    process_image()
+    
+    # Klavye kontrolü
     key = cv2.waitKey(1) & 0xFF
     
     if key == ord('q'):
@@ -288,4 +312,6 @@ while True:
         save_settings(settings)
         break
 
+# Kamerayı kapat
+cap.release()
 cv2.destroyAllWindows()

@@ -1,8 +1,8 @@
 {
-  "H_MIN": 71,
-  "H_MAX": 111,
-  "S_MIN": 165,
-  "S_MAX": 255,
+  "H_MIN": 0,
+  "H_MAX": 40,
+  "S_MIN": 0,
+  "S_MAX": 83,
   "V_MIN": 175,
   "V_MAX": 255,
   "MIN_ALAN": 5,
