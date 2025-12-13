@@ -240,16 +240,24 @@ class MyDetector:
         # BGR'den HSV'ye dönüştür
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         
-        # Kırmızı renk için HSV aralıkları
+        # HSV aralıkları
         lower_red1 = np.array([h_min, s_min, v_min])
         upper_red1 = np.array([h_max, s_max, v_max])
-        lower_red2 = np.array([h2_min, s_min, v_min])
-        upper_red2 = np.array([h2_max, s_max, v_max])
         
         # Maskeler oluştur
         mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-        mask = mask1 + mask2
+        
+        # İkinci aralık sadece kırmızı renk için (H <= 10 veya H >= 170)
+        # Diğer renkler için sadece mask1 kullan
+        if (h_min <= 10 and h_max <= 10) or (h_min >= 170 or h_max >= 170):
+            # Kırmızı renk tespit ediliyor - iki aralık birleştir
+            lower_red2 = np.array([h2_min, s_min, v_min])
+            upper_red2 = np.array([h2_max, s_max, v_max])
+            mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+            mask = mask1 + mask2
+        else:
+            # Diğer renkler - sadece tek aralık kullan
+            mask = mask1
         
         # Connected Components ile filtreleme
         num_labels, labels = cv2.connectedComponents(mask)
@@ -323,7 +331,7 @@ class MyDetector:
             return None
         
         # Durum bilgisi
-        durum = f"Laser Sayisi: {len(laser_merkezleri)}"
+        durum = "Laser Tespit Edildi" if len(laser_merkezleri) > 0 else "Laser Yok"
         renk = (0, 255, 0) if len(laser_merkezleri) > 0 else (0, 0, 255)
         cv2.putText(frame_inpainted, durum, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, renk, 2)
         
@@ -471,7 +479,7 @@ class MyDetector:
                 parlaklik_toplami = r + g + b
                 metin_renk = (0, 0, 0) if parlaklik_toplami > 350 else (255, 255, 255)
                 
-                print(f"LED {led_no}: X={cX}, Y={cY}")
+                # print(f"LED {led_no}: X={cX}, Y={cY}")
                 cv2.putText(frame_inpainted, f"LED {led_no}", (cX - 30, cY - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, metin_renk, 2)
                 cv2.circle(frame_inpainted, (cX, cY), 5, etiket_renk, -1)
 
@@ -488,8 +496,8 @@ class MyDetector:
             orta_nokta = (int(toplam_x / len(led_merkezleri)), int(toplam_y / len(led_merkezleri)))
             cv2.circle(frame_inpainted, orta_nokta, 5, (255, 255, 0), -1)
             cv2.putText(frame_inpainted, "Orta Nokta", (orta_nokta[0] + 10, orta_nokta[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-            print(f"Orta Nokta: X={orta_nokta[0]}, Y={orta_nokta[1]}")
-            print("---------------------------------------------")
+            # print(f"Orta Nokta: X={orta_nokta[0]}, Y={orta_nokta[1]}")
+            # print("---------------------------------------------")
 
         
         durum = "4 LED TESPIT EDILDI!" if len(led_merkezleri) == 4 else f"LED Sayisi: {len(led_merkezleri)}"

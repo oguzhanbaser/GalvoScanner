@@ -1,0 +1,118 @@
+import cv2
+import numpy as np
+import json
+import os, time
+from myDetector import MyDetector  # detector_module, MyDetector sınıfını içermelidir
+import serial
+
+# Ana program - geriye dönük uyumluluk için
+if __name__ == "__main__":
+    # Kullanım örnekleri:
+    
+    # ÖRNEK 1: Resim ile kullanım
+    # image_path = 'C:\\Users\\baser-huawei\\Documents\\GitHub\\GalvoScanner\\Softwares\\new_files\\image.jpg'
+    # try:
+    #     detector = MyDetector(image_path=image_path)
+    #     detector.run(source_type='image')
+    # except ValueError as e:
+    #     print(f"Hata: {e}")
+    
+    # ÖRNEK 2: Video dosyası ile kullanım (yorumlu)
+    # video_path = 'path/to/video.mp4'
+    # try:
+    #     detector = MyDetector(video_source=video_path)
+    #     detector.run(source_type='video')
+    # except ValueError as e:
+    #     print(f"Hata: {e}")
+    
+    # ÖRNEK 3: Kamera ile kullanım (yorumlu)
+
+    cap = cv2.VideoCapture("http://192.168.19.221:5000/video_roi")
+
+    detector = MyDetector(laser_settings_file="laser_trackbar_settings.json", led_settings_file="led_settings.json")  # 0 = varsayılan kamera
+
+    ser = serial.Serial('COM5', 115200, timeout=1, dsrdtr=True)
+    
+    ser.write(b'G0,0,')
+    # detector.run(source_type='video')
+
+    last_time = 0
+    step_x = 0
+    step_y = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Video sona erdi veya okunamadı.")
+            break
+
+        # frame = cv2.imread("C:\\Users\\baser_7rlgtle\\Desktop\\MyFolders\\myGithub\\GalvoScanner\\ss_led_laser.png")
+        frame = cv2.resize(frame, (640, 480))
+
+        laser_point = detector.detect_laser(frame)
+        led_points = detector.detect_leds(frame)
+
+        cv2.imshow('Orjinal', frame)
+
+        # if laser_point is not None:
+        #     laser_x, laser_y = laser_point['center_point']
+        #     print(f"Laser Koordinatları: X={laser_point['center_point'][0]}, Y={laser_point['center_point'][1]}")
+        #     cv2.imshow('Lazer Tespit', laser_point['annotated_frame'])
+
+        # if led_points is not None:
+        #     led_x, led_y = led_points['center_point']
+        #     print("LED Merkezleri:", led_points['center_point'])
+
+        if (laser_point is not None) and (led_points is not None):
+            laser_x, laser_y = laser_point['center_point']
+            led_x, led_y = led_points['center_point']
+            
+            # Farkları hesapla (lazer - hedef)
+            diff_x = laser_x - led_x
+            diff_y = laser_y - led_y
+            
+            # Tolerans kontrolü (hedefe ulaşıldı mı?)
+            TOLERANCE = 5
+            if abs(diff_x) < TOLERANCE:
+                diff_x = 0
+            if abs(diff_y) < TOLERANCE:
+                diff_y = 0
+
+            # Hareket gerekli mi?
+            if (diff_x != 0 or diff_y != 0) and (time.time() - last_time > 0.1):
+                # Farka göre adım boyutu belirle (daha büyük fark = daha büyük adım)
+                # step_size_x = 1 if abs(diff_x) < 20 else (2 if abs(diff_x) < 50 else 3)
+                # step_size_y = 1 if abs(diff_y) < 20 else (2 if abs(diff_y) < 50 else 3)
+                step_size_x = 1
+                step_size_y = 1
+                
+                # Hareket yönünü belirle
+                # diff_x > 0: lazer sağda, galvo'yu sola kaydır (-)
+                # diff_x < 0: lazer solda, galvo'yu sağa kaydır (+)
+                if diff_x > 0:
+                    step_x -= step_size_x
+                elif diff_x < 0:
+                    step_x += step_size_x
+                
+                if diff_y > 0:
+                    step_y -= step_size_y
+                elif diff_y < 0:
+                    step_y += step_size_y
+
+                last_time = time.time()
+
+                # Komutu gönder
+                command = f'G{step_x},{step_y},'
+                ser.write(command.encode())
+                print(f"DiffX: {diff_x:+4d}, DiffY: {diff_y:+4d} | StepX: {step_x:+4d}, StepY: {step_y:+4d} | Komut: {command}")
+            
+            cv2.imshow('Lazer Tespit', laser_point['annotated_frame'])
+
+        cv2.imshow('LED Tespit', led_points['annotated_frame'])
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+            
+    cap.release()
+    cv2.destroyAllWindows()
+            

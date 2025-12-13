@@ -27,13 +27,13 @@
 #define m2_y 1
 #define m1_y 8
 
-#define micro_step 64
+#define micro_step 32
 
-#define homePosX 9151 * micro_step / 256 // Tweak this to get a perfect 45 deg angle as 0 position
-#define homePosY 7262 * micro_step / 256 // Tweak this to get a perfect 45 deg angle as 0 position
+#define homePosX 7168 * micro_step / 256 // Tweak this to get a perfect 45 deg angle as 0 position
+#define homePosY 6748 * micro_step / 256 // Tweak this to get a perfect 45 deg angle as 0 position
 
-#define D 95 // orthogonal distance of "last" mirror and projection plane
-#define E 19 // orthogonal distance of X and Y rotational axes
+#define D 950 // orthogonal distance of "last" mirror and projection plane
+#define E 55 // orthogonal distance of X and Y rotational axes
 
 uint32_t xStepPos = 0, yStepPos = 0;
 uint32_t xStepPosOld = 0, yStepPosOld = 0;
@@ -41,8 +41,8 @@ double angleX = 0, angleY = 0;
 
 TMC2209 Xaxis, Yaxis;
 FastAccelStepperEngine stepperEngine = FastAccelStepperEngine();
-FastAccelStepper* Xaxis_step;
-FastAccelStepper* Yaxis_step;
+FastAccelStepper *Xaxis_step;
+FastAccelStepper *Yaxis_step;
 
 // MultiStepper steppers;
 
@@ -51,10 +51,10 @@ bool endStop1Triggered = false;
 bool endStop2Triggered = false;
 
 unsigned long lastTime = 0;
-uint16_t maxSpeed = 40000 * micro_step / 256;
-uint16_t xSpeed = 40000 * micro_step / 256; // Speed for X-axis
-uint16_t ySpeed = 40000 * micro_step / 256; // Speed for Y-axis
-uint16_t homeSpeed = 20000 * micro_step / 256;
+uint16_t maxSpeed = 20000 * micro_step / 256;
+uint16_t xSpeed = 20000 * micro_step / 256; // Speed for X-axis
+uint16_t ySpeed = 20000 * micro_step / 256; // Speed for Y-axis
+uint16_t homeSpeed = 5000 * micro_step / 256;
 
 static constexpr int steps_per_rot = 200 * micro_step;
 double degrees_per_step = 360.00 / steps_per_rot;
@@ -63,8 +63,8 @@ bool homingActive = false;
 
 void homing();
 void testMotors();
+void move_steps(int xstep, int ystep);
 void move_To(double x, double y);
-
 
 // Interrupt service routines (ISRs)
 void handleEndStop1()
@@ -124,26 +124,30 @@ void setup()
   //  // Initialize stepper motors
   stepperEngine.init();
   Xaxis_step = stepperEngine.stepperConnectToPin(step_x, FasDriver::RMT);
-  if(Xaxis_step)
+  if (Xaxis_step)
   {
     Xaxis_step->setDirectionPin(dir_x);
     Xaxis_step->setEnablePin(en_x);
     Xaxis_step->setAutoEnable(false);
     Xaxis_step->setSpeedInUs(100);
     Xaxis_step->setAcceleration(2000);
-  }else{
+  }
+  else
+  {
     Serial.println("Failed to connect X axis stepper to pin!");
   }
 
   Yaxis_step = stepperEngine.stepperConnectToPin(step_y, FasDriver::RMT);
-  if(Yaxis_step)
+  if (Yaxis_step)
   {
     Yaxis_step->setDirectionPin(dir_y);
     Yaxis_step->setEnablePin(en_y);
     Yaxis_step->setAutoEnable(false);
     Yaxis_step->setSpeedInUs(100);
     Yaxis_step->setAcceleration(2000);
-  }else{
+  }
+  else
+  {
     Serial.println("Failed to connect Y axis stepper to pin!");
   }
 
@@ -199,13 +203,13 @@ void setup()
   Xaxis.setMicrostepsPerStep(micro_step);
   Yaxis.setMicrostepsPerStep(micro_step); // Set microstepping to 1/256 for both axes
 
-  Xaxis.setRunCurrent(50);
+  Xaxis.setRunCurrent(100);
   Xaxis.enable();
-  Xaxis.setHoldCurrent(50);
+  Xaxis.setHoldCurrent(100);
 
-  Yaxis.setRunCurrent(50);
+  Yaxis.setRunCurrent(100);
   Yaxis.enable();
-  Yaxis.setHoldCurrent(50);
+  Yaxis.setHoldCurrent(100);
 
   Xaxis.enableCoolStep();
   Yaxis.enableCoolStep();
@@ -222,8 +226,6 @@ void setup()
   // testMotors();
 
   // homing();
-
-
 }
 
 void testMotors()
@@ -235,15 +237,17 @@ void testMotors()
 void loop()
 {
 
-  if (endStop1Triggered) { // Endstop tetiklendi (LOW ise)
-    Xaxis_step->forceStop();         // Motoru hemen durdur
+  if (endStop1Triggered)
+  {                            // Endstop tetiklendi (LOW ise)
+    Xaxis_step->forceStop();   // Motoru hemen durdur
     endStop1Triggered = false; // Reset flag for future homing
 
     Serial.println("Endstop X'e ulaşıldı.");
   }
 
-  if (endStop2Triggered) { // Endstop tetiklendi (LOW ise)
-    Yaxis_step->forceStop();         // Motoru hemen durdur
+  if (endStop2Triggered)
+  {                            // Endstop tetiklendi (LOW ise)
+    Yaxis_step->forceStop();   // Motoru hemen durdur
     endStop2Triggered = false; // Reset flag for future homing
 
     Serial.println("Endstop Y'e ulaşıldı.");
@@ -262,12 +266,14 @@ void loop()
     {
       int xdist = Serial.parseInt();
       int ydist = Serial.parseInt();
-      move_To(xdist, ydist); // Call the move_To function with the received coordinates
-    }else if(command == 'T')
+      // move_To(xdist, ydist); // Call the move_To function with the received coordinates
+      move_steps(xdist, ydist); // Call the move_To function with the received coordinates
+    }
+    else if (command == 'Z')
     {
-      int xval = Serial.parseInt();
-      int yval = Serial.parseInt();
-
+      Xaxis_step->setCurrentPosition(0);
+      Yaxis_step->setCurrentPosition(0);
+      Serial.println("Position reset to (0,0)");
     }
   }
 }
@@ -281,9 +287,10 @@ void homing()
   Xaxis_step->setSpeedInHz(homeSpeed);
   Xaxis_step->moveTo(1000000, false); // Move a large negative distance
 
-  while (endStop1Triggered == false) delay(1); // Endstop tetiklendi (LOW ise)
+  while (endStop1Triggered == false)
+    delay(1); // Endstop tetiklendi (LOW ise)
   Xaxis_step->stopMove();
-  Xaxis_step->forceStopAndNewPosition(0);         // Motoru hemen durdur
+  Xaxis_step->forceStopAndNewPosition(0); // Motoru hemen durdur
   // Xaxis_step->setCurrentPosition(0);  // Sıfırla (opsiyonel)
 
   Serial.println("Endstop X'e ulaşıldı, Homeming tamamlandı");
@@ -292,15 +299,16 @@ void homing()
 
   endStop1Triggered = false; // Reset flag for future homing
 
-  Xaxis_step->moveTo(-homePosX, true);  
-  Xaxis_step->setCurrentPosition(0);  // Sıfırla (opsiyonel)
+  Xaxis_step->moveTo(-homePosX, true);
+  Xaxis_step->setCurrentPosition(0); // Sıfırla (opsiyonel)
 
   Yaxis_step->setSpeedInHz(homeSpeed);
   Yaxis_step->moveTo(1000000, false); // Move a large negative distance
 
-  while (endStop2Triggered == false) delay(1); // Endstop tetiklendi (LOW ise)
+  while (endStop2Triggered == false)
+    delay(1); // Endstop tetiklendi (LOW ise)
   Yaxis_step->stopMove();
-  Yaxis_step->forceStopAndNewPosition(0);         // Motoru hemen durdur
+  Yaxis_step->forceStopAndNewPosition(0); // Motoru hemen durdur
 
   // Yaxis_step->setCurrentPosition(0);  // Sıfırla (opsiyonel)
   Serial.println("Endstop Y'e ulaşıldı, Homeming tamamlandı");
@@ -310,12 +318,22 @@ void homing()
   endStop2Triggered = false; // Reset flag for future homing
 
   Yaxis_step->moveTo(-homePosY, true);
-  Yaxis_step->setCurrentPosition(0);  // Sıfırla (opsiyonel)
+  Yaxis_step->setCurrentPosition(0); // Sıfırla (opsiyonel)
 
   // Attach interrupts to end-stop pins
   // attachInterrupt(digitalPinToInterrupt(endswitchX), handleEndStop1, FALLING);
   // attachInterrupt(digitalPinToInterrupt(endswitchY), handleEndStop2, FALLING);
+}
 
+void move_steps(int xstep, int ystep)
+{
+  Xaxis_step->moveTo(xstep);
+  Yaxis_step->moveTo(ystep);
+
+  while (Xaxis_step->isRunning() || Yaxis_step->isRunning())
+  {
+
+  }
 }
 
 void move_To(double x, double y)
@@ -325,26 +343,26 @@ void move_To(double x, double y)
   // long targetX = round(angleX / degrees_per_step);
   // long targetY = round(angleY / degrees_per_step);
 
-  const double root = sqrt(D*D + y*y);
+  const double root = sqrt(D * D + y * y);
   const double denomX = E + root;
 
   // 2) Açıları RADYAN cinsinden, atan2 ile hesapla
-  const double angleY_rad = atan2(y, D);          // atan(y/D)
-  const double angleX_rad = atan2(x, denomX);     // atan(x/(E+sqrt(...)))
+  const double angleY_rad = atan2(y, D);      // atan(y/D)
+  const double angleX_rad = atan2(x, denomX); // atan(x/(E+sqrt(...)))
 
   // 3) Tek seferde, en yakına yuvarlayarak step’e çevir (truncation yerine lround)
   long targetX = lround(angleX_rad * STEPS_PER_RAD);
   long targetY = lround(angleY_rad * STEPS_PER_RAD);
 
-  Serial.println("X Pos: " + String(x));
-  Serial.println("Y Pos: " + String(y));
-  Serial.println("X Diff: " + String(targetX - Xaxis_step->getCurrentPosition()));
-  Serial.println("Y Diff: " + String(targetY - Yaxis_step->getCurrentPosition()));
-  Serial.println("X-axis steps: " + String(targetX));
-  Serial.println("Y-axis steps: " + String(targetY));
-  Serial.println("X angle: " + String(angleX));
-  Serial.println("Y angle: " + String(angleY));
-  Serial.println("-------------------------");
+  // Serial.println("X Pos: " + String(x));
+  // Serial.println("Y Pos: " + String(y));
+  // Serial.println("X Diff: " + String(targetX - Xaxis_step->getCurrentPosition()));
+  // Serial.println("Y Diff: " + String(targetY - Yaxis_step->getCurrentPosition()));
+  // Serial.println("X-axis steps: " + String(targetX));
+  // Serial.println("Y-axis steps: " + String(targetY));
+  // Serial.println("X angle: " + String(angleX));
+  // Serial.println("Y angle: " + String(angleY));
+  // Serial.println("-------------------------");
 
   // AccelStepper ile hedef pozisyonlara hareket et
 
@@ -353,7 +371,6 @@ void move_To(double x, double y)
 
   while (Xaxis_step->isRunning() || Yaxis_step->isRunning())
   {
-
   }
 
   // İki ekseni aynı anda hareket ettir
@@ -362,7 +379,7 @@ void move_To(double x, double y)
   //   // Xaxis_step.run();
   //   // Yaxis_step.run();
   // }
-} 
+}
 
 double oldX = 0, oldY = 0;
 void move_To_Diff(double x, double y)
@@ -375,18 +392,16 @@ void move_To_Diff(double x, double y)
   double diffX = x - oldX;
   double diffY = y - oldY;
 
-  const double root = sqrt(D*D + diffY*diffY);
+  const double root = sqrt(D * D + diffY * diffY);
   const double denomX = E + root;
 
   // 2) Açıları RADYAN cinsinden, atan2 ile hesapla
-  const double angleY_rad = atan2(diffY, D);          // atan(y/D)
-  const double angleX_rad = atan2(diffX, denomX);     // atan(x/(E+sqrt(...)))
+  const double angleY_rad = atan2(diffY, D);      // atan(y/D)
+  const double angleX_rad = atan2(diffX, denomX); // atan(x/(E+sqrt(...)))
 
   // 3) Tek seferde, en yakına yuvarlayarak step’e çevir (truncation yerine lround)
   long targetX = lround(angleX_rad * STEPS_PER_RAD);
   long targetY = lround(angleY_rad * STEPS_PER_RAD);
-
-
 
   Serial.println("X Pos: " + String(x));
   Serial.println("Y Pos: " + String(y));
@@ -408,7 +423,6 @@ void move_To_Diff(double x, double y)
 
   while (Xaxis_step->isRunning() || Yaxis_step->isRunning())
   {
-
   }
 
   oldX = x;
@@ -420,4 +434,4 @@ void move_To_Diff(double x, double y)
   //   // Xaxis_step.run();
   //   // Yaxis_step.run();
   // }
-} 
+}

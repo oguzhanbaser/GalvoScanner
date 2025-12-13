@@ -171,7 +171,11 @@ def process_image(x=None):
     # Konturları bul
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    laser_merkezleri = []
+    # En büyük ve en dairesel noktayı bul
+    best_contour = None
+    best_score = -1
+    best_area = 0
+    best_circularity = 0
     
     # Konturları işle - alan ve dairesellik kontrolü
     for c in contours:
@@ -192,22 +196,36 @@ def process_image(x=None):
         if dairesellik < dairesellik_esigi:
             continue
         
+        # En iyi skoru hesapla (alan * dairesellik)
+        # Hem büyük hem de dairesel olanı seç
+        score = area * dairesellik
+        
+        if score > best_score:
+            best_score = score
+            best_contour = c
+            best_area = area
+            best_circularity = dairesellik
+    
+    laser_merkezleri = []
+    
+    # En iyi kontur varsa işaretle
+    if best_contour is not None:
         # Merkez hesapla
-        M = cv2.moments(c)
+        M = cv2.moments(best_contour)
         if M["m00"] != 0:
             cx = int(M["m10"] / M["m00"])
             cy = int(M["m01"] / M["m00"])
             laser_merkezleri.append((cx, cy))
             
             # Görselleştir - çember olarak çiz
-            radius = int(np.sqrt(area / np.pi))
+            radius = int(np.sqrt(best_area / np.pi))
             cv2.circle(frame_inpainted, (cx, cy), radius, (0, 255, 0), 2)
             cv2.circle(frame_inpainted, (cx, cy), 3, (0, 0, 255), -1)
-            cv2.putText(frame_inpainted, f'Laser {dairesellik:.2f}', (cx - 40, cy - radius - 10), 
+            cv2.putText(frame_inpainted, f'Laser {best_circularity:.2f}', (cx - 40, cy - radius - 10), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
     
     # Durum bilgisi
-    durum = f"Laser Sayisi: {len(laser_merkezleri)}"
+    durum = f"Laser Tespit Edildi" if len(laser_merkezleri) > 0 else "Laser Yok"
     renk = (0, 255, 0) if len(laser_merkezleri) > 0 else (0, 0, 255)
     cv2.putText(frame_inpainted, durum, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, renk, 2)
     
