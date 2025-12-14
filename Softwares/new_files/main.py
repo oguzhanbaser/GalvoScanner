@@ -5,6 +5,32 @@ import os, time
 from myDetector import MyDetector  # detector_module, MyDetector sınıfını içermelidir
 import serial
 
+def waitForSerialData(ser, timeout=2):
+    mTime = time.time()
+    while ser.in_waiting == 0:
+        if time.time() - mTime > timeout:  # 2 saniye zaman aşımı
+            return None
+        time.sleep(0.01)  # Küçük bir gecikme ekleyerek CPU kullanımını azalt
+
+    data = ser.readline().decode('utf-8').rstrip()
+    return data
+
+def parseSerialCommand(command_str):
+    
+    cmd_data = None
+    try:
+        parts = command_str.strip().split(',')
+        if len(parts) == 3:
+            if parts[0] == '#':
+                cmd = parts[1]
+                data = parts[2]
+                cmd_data = {'command': cmd, 'data': data}
+    except Exception as e:
+        print(f"Seri komut ayrıştırma hatası: {e}")
+        pass
+
+    return cmd_data
+
 # Ana program - geriye dönük uyumluluk için
 if __name__ == "__main__":
     # Kullanım örnekleri:
@@ -33,6 +59,9 @@ if __name__ == "__main__":
 
     ser = serial.Serial('COM5', 115200, timeout=1, dsrdtr=True)
     
+    ser.write(b'H')
+    waitForSerialData(ser, timeout=30)
+
     ser.write(b'G0,0,')
     # detector.run(source_type='video')
 
@@ -104,7 +133,15 @@ if __name__ == "__main__":
                 # Komutu gönder
                 command = f'G{step_x},{step_y},'
                 ser.write(command.encode())
-                print(f"DiffX: {diff_x:+4d}, DiffY: {diff_y:+4d} | StepX: {step_x:+4d}, StepY: {step_y:+4d} | Komut: {command}")
+                
+                recData = waitForSerialData(ser)
+                if recData:
+                    cmd_data = parseSerialCommand(recData)
+                    if(cmd_data['command'] != 'M' or cmd_data['data'] != 'O'):
+                        print(f"Beklenmeyen yanıt: {recData}")
+                        
+
+                # print(f"DiffX: {diff_x:+4d}, DiffY: {diff_y:+4d} | StepX: {step_x:+4d}, StepY: {step_y:+4d} | Komut: {command}")
             
             cv2.imshow('Lazer Tespit', laser_point['annotated_frame'])
 

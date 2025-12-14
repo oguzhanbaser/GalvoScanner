@@ -135,6 +135,7 @@ void setup()
   else
   {
     Serial.println("Failed to connect X axis stepper to pin!");
+    while(1) delay(10);
   }
 
   Yaxis_step = stepperEngine.stepperConnectToPin(step_y, FasDriver::RMT);
@@ -149,6 +150,7 @@ void setup()
   else
   {
     Serial.println("Failed to connect Y axis stepper to pin!");
+    while(1) delay(10);
   }
 
   digitalWrite(en_x, LOW); // Enable X-axis motor
@@ -228,6 +230,25 @@ void setup()
   // homing();
 }
 
+void sendXCommand(byte pCommand, int32_t pValue)
+{
+  Serial.print("#");
+  Serial.print(",");
+  Serial.print((char)pCommand);
+  Serial.print(",");
+  Serial.println((char)pValue);
+}
+
+#define CMD_ENDSTOP 'E'
+#define CMD_ENDSTOP_X 'X'
+#define CMD_ENDSTOP_Y 'Y'
+#define CMD_HOME 'H'
+#define CMD_HOME_X 'X'
+#define CMD_HOME_Y 'Y'
+#define CMD_MOVE_END 'M'
+#define CMD_OK 'O'
+#define CMD_ERROR 'F'
+
 void testMotors()
 {
 
@@ -240,17 +261,21 @@ void loop()
   if (endStop1Triggered)
   {                            // Endstop tetiklendi (LOW ise)
     Xaxis_step->forceStop();   // Motoru hemen durdur
+    delay(10);
     endStop1Triggered = false; // Reset flag for future homing
 
-    Serial.println("Endstop X'e ulaşıldı.");
+    // Serial.println("Endstop X'e ulaşıldı.");
+    sendXCommand(CMD_ENDSTOP, CMD_ENDSTOP_X);
   }
 
   if (endStop2Triggered)
   {                            // Endstop tetiklendi (LOW ise)
     Yaxis_step->forceStop();   // Motoru hemen durdur
+    delay(10);
     endStop2Triggered = false; // Reset flag for future homing
 
-    Serial.println("Endstop Y'e ulaşıldı.");
+    // Serial.println("Endstop Y'e ulaşıldı.");
+    sendXCommand(CMD_ENDSTOP, CMD_ENDSTOP_Y);
   }
 
   if (Serial.available())
@@ -273,7 +298,8 @@ void loop()
     {
       Xaxis_step->setCurrentPosition(0);
       Yaxis_step->setCurrentPosition(0);
-      Serial.println("Position reset to (0,0)");
+      // Serial.println("Position reset to (0,0)");
+      sendXCommand(CMD_HOME, CMD_OK);
     }
   }
 }
@@ -293,7 +319,8 @@ void homing()
   Xaxis_step->forceStopAndNewPosition(0); // Motoru hemen durdur
   // Xaxis_step->setCurrentPosition(0);  // Sıfırla (opsiyonel)
 
-  Serial.println("Endstop X'e ulaşıldı, Homeming tamamlandı");
+  // Serial.println("Endstop X'e ulaşıldı, Homeming tamamlandı");
+  sendXCommand(CMD_HOME, CMD_HOME_X);
 
   delay(500);
 
@@ -311,7 +338,8 @@ void homing()
   Yaxis_step->forceStopAndNewPosition(0); // Motoru hemen durdur
 
   // Yaxis_step->setCurrentPosition(0);  // Sıfırla (opsiyonel)
-  Serial.println("Endstop Y'e ulaşıldı, Homeming tamamlandı");
+  // Serial.println("Endstop Y'e ulaşıldı, Homeming tamamlandı");
+  sendXCommand(CMD_HOME, CMD_HOME_Y);
 
   delay(500);
 
@@ -319,6 +347,8 @@ void homing()
 
   Yaxis_step->moveTo(-homePosY, true);
   Yaxis_step->setCurrentPosition(0); // Sıfırla (opsiyonel)
+
+  sendXCommand(CMD_HOME, CMD_OK);
 
   // Attach interrupts to end-stop pins
   // attachInterrupt(digitalPinToInterrupt(endswitchX), handleEndStop1, FALLING);
@@ -334,6 +364,8 @@ void move_steps(int xstep, int ystep)
   {
 
   }
+
+  sendXCommand(CMD_MOVE_END, CMD_OK);
 }
 
 void move_To(double x, double y)
@@ -373,6 +405,8 @@ void move_To(double x, double y)
   {
   }
 
+  sendXCommand(CMD_MOVE_END, CMD_OK);
+
   // İki ekseni aynı anda hareket ettir
   // while (Xaxis_step.distanceToGo() != 0 || Yaxis_step.distanceToGo() != 0)
   // {
@@ -403,12 +437,12 @@ void move_To_Diff(double x, double y)
   long targetX = lround(angleX_rad * STEPS_PER_RAD);
   long targetY = lround(angleY_rad * STEPS_PER_RAD);
 
-  Serial.println("X Pos: " + String(x));
-  Serial.println("Y Pos: " + String(y));
+  // Serial.println("X Pos: " + String(x));
+  // Serial.println("Y Pos: " + String(y));
   // Serial.println("X Diff: " + String(targetX - Xaxis_step->getCurrentPosition()));
   // Serial.println("Y Diff: " + String(targetY - Yaxis_step->getCurrentPosition()));
-  Serial.println("X-axis steps: " + String(targetX));
-  Serial.println("Y-axis steps: " + String(targetY));
+  // Serial.println("X-axis steps: " + String(targetX));
+  // Serial.println("Y-axis steps: " + String(targetY));
   // Serial.println("X angle: " + String(angleX));
   // Serial.println("Y angle: " + String(angleY));
   Serial.println("-------------------------");
