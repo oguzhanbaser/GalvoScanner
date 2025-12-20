@@ -59,8 +59,8 @@ if __name__ == "__main__":
 
     ser = serial.Serial('COM5', 115200, timeout=1, dsrdtr=True)
     
-    ser.write(b'H')
-    waitForSerialData(ser, timeout=30)
+    # ser.write(b'H')
+    # waitForSerialData(ser, timeout=30)
 
     ser.write(b'G0,0,')
     # detector.run(source_type='video')
@@ -68,6 +68,11 @@ if __name__ == "__main__":
     last_time = 0
     step_x = 0
     step_y = 0
+    
+    # Koordinat filtreleme için buffer (son N frame ortalaması)
+    from collections import deque
+    laser_buffer = deque(maxlen=3)  # Son 3 frame
+    led_buffer = deque(maxlen=3)
 
     while True:
         ret, frame = cap.read()
@@ -93,15 +98,22 @@ if __name__ == "__main__":
         #     print("LED Merkezleri:", led_points['center_point'])
 
         if (laser_point is not None) and (led_points is not None):
-            laser_x, laser_y = laser_point['center_point']
-            led_x, led_y = led_points['center_point']
+            # Ham koordinatları buffer'a ekle
+            laser_buffer.append(laser_point['center_point'])
+            led_buffer.append(led_points['center_point'])
+            
+            # Filtrelenmiş koordinatlar (ortalaması)
+            laser_x = int(np.mean([p[0] for p in laser_buffer]))
+            laser_y = int(np.mean([p[1] for p in laser_buffer]))
+            led_x = int(np.mean([p[0] for p in led_buffer]))
+            led_y = int(np.mean([p[1] for p in led_buffer]))
             
             # Farkları hesapla (lazer - hedef)
             diff_x = laser_x - led_x
             diff_y = laser_y - led_y
             
             # Tolerans kontrolü (hedefe ulaşıldı mı?)
-            TOLERANCE = 5
+            TOLERANCE = 3
             if abs(diff_x) < TOLERANCE:
                 diff_x = 0
             if abs(diff_y) < TOLERANCE:
@@ -131,17 +143,21 @@ if __name__ == "__main__":
                 last_time = time.time()
 
                 # Komutu gönder
-                command = f'G{step_x},{step_y},'
-                ser.write(command.encode())
-                
-                recData = waitForSerialData(ser)
-                if recData:
-                    cmd_data = parseSerialCommand(recData)
-                    if(cmd_data['command'] != 'M' or cmd_data['data'] != 'O'):
-                        print(f"Beklenmeyen yanıt: {recData}")
+                command = f'G{step_y},{step_x},'
+                # command = f'G0,{step_x},'
+
+                sendCommand = True
+                if sendCommand == True:
+                    ser.write(command.encode())
+                    
+                    recData = waitForSerialData(ser)
+                    if recData:
+                        cmd_data = parseSerialCommand(recData)
+                        if(cmd_data['command'] != 'M' or cmd_data['data'] != 'O'):
+                            print(f"Beklenmeyen yanıt: {recData}")
                         
 
-                # print(f"DiffX: {diff_x:+4d}, DiffY: {diff_y:+4d} | StepX: {step_x:+4d}, StepY: {step_y:+4d} | Komut: {command}")
+                print(f"DiffX: {diff_x:+4d}, DiffY: {diff_y:+4d} | StepX: {step_x:+4d}, StepY: {step_y:+4d} | Komut: {command}")
             
             cv2.imshow('Lazer Tespit', laser_point['annotated_frame'])
 
