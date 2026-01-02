@@ -299,7 +299,7 @@ def create_app_state():
 def run_detection():
     """Detection döngüsünü çalıştır"""
     global detector
-    from detection import detection_loop, GalvoDetection
+    from detection import GalvoDetection
     
     app_state = create_app_state()
     

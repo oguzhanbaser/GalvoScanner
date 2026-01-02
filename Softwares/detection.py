@@ -23,7 +23,7 @@ class GalvoDetection:
         
         # Varsayılan yapılandırma
         self.serial_port_name = self.config.get('serial_port', 'COM5')
-        self.video_source = self.config.get('video_source', "http://192.168.1.14:4500/video")
+        self.video_source = self.config.get('video_source', "http://192.168.19.18:4500/video_roi")
         self.laser_settings = self.config.get('laser_settings', "laser_trackbar_settings.json")
         self.led_settings = self.config.get('led_settings', "led_settings.json")
         
@@ -70,7 +70,11 @@ class GalvoDetection:
     
     def init_video(self):
         """Video kaynağını başlat"""
-        self.cap = cv2.VideoCapture(self.video_source)
+        self.cap = cv2.VideoCapture(self.video_source, cv2.CAP_FFMPEG)
+        # Buffer boyutunu 1 yap - sadece en son frame'i al, eski frame'leri atla
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # FPS'i artır (eğer kaynak destekliyorsa)
+        self.cap.set(cv2.CAP_PROP_FPS, 30)
         self.detector = MyDetector(
             laser_settings_file=self.laser_settings, 
             led_settings_file=self.led_settings
@@ -106,15 +110,22 @@ class GalvoDetection:
         laser_point = self.detector.detect_laser(frame)
         led_points = self.detector.detect_leds(frame)
         
+        cv2.imshow("frame"  , frame)
+        cv2.waitKey(1)
+
         # Frame'leri güncelle
         with self.app_state['frame_lock']:
+            # small_frame = cv2.resize(frame, (640, 480))
             self.app_state['current_frames']['original'] = frame.copy()
             if led_points is not None:
+                # small_frame_led = cv2.resize(led_points['annotated_frame'], (640, 480))
                 self.app_state['current_frames']['led'] = led_points['annotated_frame'].copy()
             if laser_point is not None:
+                # small_frame_laser = cv2.resize(laser_point['annotated_frame'], (640, 480))
                 self.app_state['current_frames']['laser'] = laser_point['annotated_frame'].copy()
         
         return laser_point, led_points
+        # return None, None
     
     def calculate_tracking(self, laser_point, led_points):
         """Takip hesaplamalarını yap"""
@@ -196,6 +207,8 @@ class GalvoDetection:
         
         while True:
             ret, frame = self.cap.read()
+            frame = cv2.resize(frame, (640, 480))
+
             if not ret:
                 print("Video sona erdi veya okunamadı. Yeniden bağlanılıyor...")
                 time.sleep(1)
@@ -211,7 +224,8 @@ class GalvoDetection:
             # Hareket gönder
             if tracking_result:
                 self.send_movement(tracking_result['diff_x'], tracking_result['diff_y'])
-        
+    
+
         self.cleanup()
     
     def cleanup(self):
@@ -222,13 +236,3 @@ class GalvoDetection:
             self.serial_port.close()
 
 
-def detection_loop(app_state, config=None):
-    """
-    Ana algılama döngüsü fonksiyonu - eski API uyumluluğu için
-    
-    Args:
-        app_state: Global state sözlüğü
-        config: Yapılandırma sözlüğü
-    """
-    detector = GalvoDetection(app_state, config)
-    detector.run()

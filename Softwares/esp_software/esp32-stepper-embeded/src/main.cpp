@@ -4,8 +4,8 @@
 #include <FastAccelStepper.h>
 #include <math.h>
 
-#define endswitchX 12
-#define endswitchY 14
+#define endswitchX 34
+#define endswitchY 35
 
 #define en 21
 #define pdn_rx 23

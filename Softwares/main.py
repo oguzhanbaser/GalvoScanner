@@ -53,7 +53,7 @@ if __name__ == "__main__":
     
     # ÖRNEK 3: Kamera ile kullanım (yorumlu)
 
-    cap = cv2.VideoCapture("http://192.168.19.221:5000/video_roi")
+    cap = cv2.VideoCapture("http://192.168.19.18:4500/video_roi")
 
     detector = MyDetector(laser_settings_file="laser_trackbar_settings.json", led_settings_file="led_settings.json")  # 0 = varsayılan kamera
 
@@ -103,65 +103,73 @@ if __name__ == "__main__":
 
         if (laser_point is not None) and (led_points is not None):
             # Ham koordinatları buffer'a ekle
-            laser_buffer.append(laser_point['center_point'])
-            led_buffer.append(led_points['center_point'])
-            
-            # Filtrelenmiş koordinatlar (ortalaması)
-            laser_x = int(np.mean([p[0] for p in laser_buffer]))
-            laser_y = int(np.mean([p[1] for p in laser_buffer]))
-            led_x = int(np.mean([p[0] for p in led_buffer]))
-            led_y = int(np.mean([p[1] for p in led_buffer]))
-            
-            # Farkları hesapla (lazer - hedef)
-            diff_x = laser_x - led_x
-            diff_y = laser_y - led_y
-            
-            # Tolerans kontrolü (hedefe ulaşıldı mı?)
-            TOLERANCE = 3
-            if abs(diff_x) < TOLERANCE:
-                diff_x = 0
-            if abs(diff_y) < TOLERANCE:
-                diff_y = 0
 
-            # Hareket gerekli mi?
-            if (diff_x != 0 or diff_y != 0) and (time.time() - last_time > 0.1):
-                # Farka göre adım boyutu belirle (daha büyük fark = daha büyük adım)
-                # step_size_x = 1 if abs(diff_x) < 20 else (2 if abs(diff_x) < 50 else 3)
-                # step_size_y = 1 if abs(diff_y) < 20 else (2 if abs(diff_y) < 50 else 3)
-                step_size_x = 1
-                step_size_y = 1
+            if laser_point['center_point'] is not None and led_points['center_point'] is not None:
+
+                laser_buffer.append(laser_point['center_point'])
+                led_buffer.append(led_points['center_point'])
                 
-                # Hareket yönünü belirle
-                # diff_x > 0: lazer sağda, galvo'yu sola kaydır (-)
-                # diff_x < 0: lazer solda, galvo'yu sağa kaydır (+)
-                if diff_x > 0:
-                    step_x -= step_size_x
-                elif diff_x < 0:
-                    step_x += step_size_x
+                # Filtrelenmiş koordinatlar (ortalaması)
+                try:
+                    laser_x = int(np.mean([p[0] for p in laser_buffer]))
+                    laser_y = int(np.mean([p[1] for p in laser_buffer]))
+                    led_x = int(np.mean([p[0] for p in led_buffer]))
+                    led_y = int(np.mean([p[1] for p in led_buffer]))
+                except Exception as e:
+                    print(f"Koordinat ortalaması hesaplama hatası: {e}")
+                    laser_x, laser_y = laser_point['center_point']
+                    led_x, led_y = led_points['center_point']
                 
-                if diff_y > 0:
-                    step_y -= step_size_y
-                elif diff_y < 0:
-                    step_y += step_size_y
+                # Farkları hesapla (lazer - hedef)
+                diff_x = laser_x - led_x
+                diff_y = laser_y - led_y
+                
+                # Tolerans kontrolü (hedefe ulaşıldı mı?)
+                TOLERANCE = 3
+                if abs(diff_x) < TOLERANCE:
+                    diff_x = 0
+                if abs(diff_y) < TOLERANCE:
+                    diff_y = 0
 
-                last_time = time.time()
-
-                # Komutu gönder
-                command = f'G{step_y},{step_x},'
-                # command = f'G0,{step_x},'
-
-                if sendCommand == True:
-                    ser.write(command.encode())
+                # Hareket gerekli mi?
+                if (diff_x != 0 or diff_y != 0) and (time.time() - last_time > 0.1):
+                    # Farka göre adım boyutu belirle (daha büyük fark = daha büyük adım)
+                    # step_size_x = 1 if abs(diff_x) < 20 else (2 if abs(diff_x) < 50 else 3)
+                    # step_size_y = 1 if abs(diff_y) < 20 else (2 if abs(diff_y) < 50 else 3)
+                    step_size_x = 1
+                    step_size_y = 1
                     
-                    recData = waitForSerialData(ser)
-                    if recData:
-                        cmd_data = parseSerialCommand(recData)
-                        if(cmd_data['command'] != 'M' or cmd_data['data'] != 'O'):
-                            print(f"Beklenmeyen yanıt: {recData}")
-                        
+                    # Hareket yönünü belirle
+                    # diff_x > 0: lazer sağda, galvo'yu sola kaydır (-)
+                    # diff_x < 0: lazer solda, galvo'yu sağa kaydır (+)
+                    if diff_x > 0:
+                        step_x -= step_size_x
+                    elif diff_x < 0:
+                        step_x += step_size_x
+                    
+                    if diff_y > 0:
+                        step_y -= step_size_y
+                    elif diff_y < 0:
+                        step_y += step_size_y
 
-                print(f"DiffX: {diff_x:+4d}, DiffY: {diff_y:+4d} | StepX: {step_x:+4d}, StepY: {step_y:+4d} | Komut: {command}")
-            
+                    last_time = time.time()
+
+                    # Komutu gönder
+                    command = f'G{step_y},{step_x},'
+                    # command = f'G0,{step_x},'
+
+                    if sendCommand == True:
+                        ser.write(command.encode())
+                        
+                        recData = waitForSerialData(ser)
+                        if recData:
+                            cmd_data = parseSerialCommand(recData)
+                            if(cmd_data['command'] != 'M' or cmd_data['data'] != 'O'):
+                                print(f"Beklenmeyen yanıt: {recData}")
+                            
+
+                    print(f"DiffX: {diff_x:+4d}, DiffY: {diff_y:+4d} | StepX: {step_x:+4d}, StepY: {step_y:+4d} | Komut: {command}")
+                
             cv2.imshow('Lazer Tespit', laser_point['annotated_frame'])
 
         cv2.imshow('LED Tespit', led_points['annotated_frame'])

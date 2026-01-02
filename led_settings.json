@@ -1,0 +1,13 @@
+{
+  "H_MIN": 77,
+  "H_MAX": 117,
+  "S_MIN": 0,
+  "S_MAX": 125,
+  "V_MIN": 175,
+  "V_MAX": 255,
+  "MIN_ALAN": 5,
+  "MAX_ALAN": 5000,
+  "H_TOLERANCE": 20,
+  "S_TOLERANCE": 80,
+  "V_TOLERANCE": 80
+}
