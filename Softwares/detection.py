@@ -7,6 +7,7 @@ import time
 from collections import deque
 import serial
 from myDetector import MyDetector
+from myCamera import MyCamera
 
 
 class GalvoDetection:
@@ -18,6 +19,8 @@ class GalvoDetection:
             app_state: app.py'den paylaşılan global state (frames, locks, etc.)
             config: Yapılandırma sözlüğü
         """
+
+        self.useCamera = True
         self.app_state = app_state
         self.config = config or {}
         
@@ -39,6 +42,9 @@ class GalvoDetection:
         self.last_time = 0
         self.laser_buffer = deque(maxlen=3)
         self.led_buffer = deque(maxlen=3)
+
+        if self.useCamera:
+            self.camera = MyCamera()
     
     def init_serial(self):
         """Seri portu başlat"""
@@ -70,16 +76,23 @@ class GalvoDetection:
     
     def init_video(self):
         """Video kaynağını başlat"""
-        self.cap = cv2.VideoCapture(self.video_source, cv2.CAP_FFMPEG)
-        # Buffer boyutunu 1 yap - sadece en son frame'i al, eski frame'leri atla
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        # FPS'i artır (eğer kaynak destekliyorsa)
-        self.cap.set(cv2.CAP_PROP_FPS, 30)
+        if not self.useCamera:
+            self.cap = cv2.VideoCapture(self.video_source, cv2.CAP_FFMPEG)
+            # Buffer boyutunu 1 yap - sadece en son frame'i al, eski frame'leri atla
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            # FPS'i artır (eğer kaynak destekliyorsa)
+            self.cap.set(cv2.CAP_PROP_FPS, 30)
+            print(f"📹 Video kaynağı: {self.video_source}")
+        else:
+            print(f"📹 Kamera kullanılıyor: MyCamera sınıfı")
+        
         self.detector = MyDetector(
             laser_settings_file=self.laser_settings, 
             led_settings_file=self.led_settings
         )
-        print(f"📹 Video kaynağı: {self.video_source}")
+        
+        if self.useCamera:
+            return True  # Kamera her zaman hazır
         return self.cap.isOpened()
     
     def wait_for_serial_data(self, timeout=2):
@@ -106,29 +119,25 @@ class GalvoDetection:
         return cmd_data
     
     def process_frame(self, frame):
-        """Tek bir frame'i işle"""
+        """Tek bir frame'i işle - OPTIMIZE: Gereksiz copy() kaldırıldı"""
         laser_point = self.detector.detect_laser(frame)
         led_points = self.detector.detect_leds(frame)
         
-        cv2.imshow("frame"  , frame)
-        cv2.waitKey(1)
+        # cv2.imshow("frame"  , frame)
+        # cv2.waitKey(1)
 
-        # Frame'leri güncelle
+        # Frame'leri güncelle - OPTIMIZE: annotated_frame zaten kopyalandı, tekrar copy() gereksiz
         with self.app_state['frame_lock']:
-            # small_frame = cv2.resize(frame, (640, 480))
-            self.app_state['current_frames']['original'] = frame.copy()
+            self.app_state['current_frames']['original'] = frame
             if led_points is not None:
-                # small_frame_led = cv2.resize(led_points['annotated_frame'], (640, 480))
-                self.app_state['current_frames']['led'] = led_points['annotated_frame'].copy()
+                self.app_state['current_frames']['led'] = led_points['annotated_frame']
             if laser_point is not None:
-                # small_frame_laser = cv2.resize(laser_point['annotated_frame'], (640, 480))
-                self.app_state['current_frames']['laser'] = laser_point['annotated_frame'].copy()
+                self.app_state['current_frames']['laser'] = laser_point['annotated_frame']
         
         return laser_point, led_points
-        # return None, None
     
     def calculate_tracking(self, laser_point, led_points):
-        """Takip hesaplamalarını yap"""
+        """Takip hesaplamalarını yap - OPTIMIZE: Numpy vektör işlemleri kullanıldı"""
         if not self.app_state.get('tracking_enabled', False):
             return None
         
@@ -138,10 +147,14 @@ class GalvoDetection:
         self.laser_buffer.append(laser_point['center_point'])
         self.led_buffer.append(led_points['center_point'])
         
-        laser_x = int(np.mean([p[0] for p in self.laser_buffer]))
-        laser_y = int(np.mean([p[1] for p in self.laser_buffer]))
-        led_x = int(np.mean([p[0] for p in self.led_buffer]))
-        led_y = int(np.mean([p[1] for p in self.led_buffer]))
+        # OPTIMIZE: List comprehension yerine numpy array işlemleri - daha hızlı
+        laser_points = np.array(self.laser_buffer)
+        led_points_arr = np.array(self.led_buffer)
+        
+        laser_x = int(np.mean(laser_points[:, 0]))
+        laser_y = int(np.mean(laser_points[:, 1]))
+        led_x = int(np.mean(led_points_arr[:, 0]))
+        led_y = int(np.mean(led_points_arr[:, 1]))
         
         diff_x = laser_x - led_x
         diff_y = laser_y - led_y
@@ -206,13 +219,19 @@ class GalvoDetection:
         print("🚀 Algılama döngüsü başlatıldı")
         
         while True:
-            ret, frame = self.cap.read()
+            if self.useCamera:
+                frame = self.camera.get_frame_roi()
+                ret = True
+            else:
+                ret, frame = self.cap.read()
+            
             frame = cv2.resize(frame, (640, 480))
 
             if not ret:
                 print("Video sona erdi veya okunamadı. Yeniden bağlanılıyor...")
                 time.sleep(1)
-                self.cap = cv2.VideoCapture(self.video_source)
+                if not self.useCamera:
+                    self.cap = cv2.VideoCapture(self.video_source)
                 continue
             
             # Frame'i işle
@@ -230,9 +249,15 @@ class GalvoDetection:
     
     def cleanup(self):
         """Kaynakları temizle"""
-        if self.cap:
+        if self.cap and not self.useCamera:
             self.cap.release()
         if self.serial_port:
             self.serial_port.close()
+        if self.useCamera and self.camera:
+            # Kamerayı durdur
+            try:
+                self.camera.picam2.stop()
+            except:
+                pass
 
 

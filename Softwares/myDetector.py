@@ -234,42 +234,39 @@ class MyDetector:
         mask_parlak = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)[1]
         frame_inpainted = cv2.inpaint(frame, mask_parlak, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
         
-        # Median Blur uygula
-        blurred = cv2.medianBlur(frame_inpainted, 5)
+        # OPTIMIZE: GaussianBlur genellikle medianBlur'dan daha hızlı
+        # Not: medianBlur gürültü temizlemede daha iyi ancak daha yavaş, gerekirse geri döndürülebilir
+        blurred = cv2.GaussianBlur(frame_inpainted, (5, 5), 0)
         
         # BGR'den HSV'ye dönüştür
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         
-        # HSV aralıkları
-        lower_red1 = np.array([h_min, s_min, v_min])
-        upper_red1 = np.array([h_max, s_max, v_max])
-        
-        # Maskeler oluştur
-        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-        
+        # OPTIMIZE: Array oluşturma maliyetini azalt - tuple kullan
         # İkinci aralık sadece kırmızı renk için (H <= 10 veya H >= 170)
-        # Diğer renkler için sadece mask1 kullan
         if (h_min <= 10 and h_max <= 10) or (h_min >= 170 or h_max >= 170):
             # Kırmızı renk tespit ediliyor - iki aralık birleştir
-            lower_red2 = np.array([h2_min, s_min, v_min])
-            upper_red2 = np.array([h2_max, s_max, v_max])
-            mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-            mask = mask1 + mask2
+            mask1 = cv2.inRange(hsv, (h_min, s_min, v_min), (h_max, s_max, v_max))
+            mask2 = cv2.inRange(hsv, (h2_min, s_min, v_min), (h2_max, s_max, v_max))
+            mask = cv2.bitwise_or(mask1, mask2)  # bitwise_or daha hızlı
         else:
             # Diğer renkler - sadece tek aralık kullan
-            mask = mask1
+            mask = cv2.inRange(hsv, (h_min, s_min, v_min), (h_max, s_max, v_max))
         
-        # Connected Components ile filtreleme
-        num_labels, labels = cv2.connectedComponents(mask)
-        filtered_mask = np.zeros_like(mask, dtype=np.uint8)
+        # Connected Components ile filtreleme - OPTIMIZE: WithStats kullanarak tek geçişte alan bilgisi al
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
         
+        # Filtreleme için boolean maskeleme kullan (daha hızlı)
+        valid_labels = []
         for label in range(1, num_labels):
-            region_mask = (labels == label).astype("uint8") * 255
-            area = cv2.countNonZero(region_mask)
-            if area >= min_area and area <= max_area:
-                filtered_mask = cv2.bitwise_or(filtered_mask, region_mask)
+            area = stats[label, cv2.CC_STAT_AREA]
+            if min_area <= area <= max_area:
+                valid_labels.append(label)
         
-        mask = filtered_mask
+        # Tek seferde mask oluştur
+        if valid_labels:
+            mask = np.isin(labels, valid_labels).astype(np.uint8) * 255
+        else:
+            mask = np.zeros_like(mask, dtype=np.uint8)
         
         # Konturları bul
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -389,36 +386,38 @@ class MyDetector:
         _, mask_parlak = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)
         frame_inpainted = cv2.inpaint(frame_processed, mask_parlak, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
         
-        # Blur ve HSV dönüşümü - tespit_led.py ile aynı
-        blurred = cv2.medianBlur(frame_inpainted, 5)
+        # Blur ve HSV dönüşümü - OPTIMIZE: Gaussian blur daha hızlı (medianBlur yerine)
+        # Not: medianBlur daha iyi gürültü temizler ama daha yavaş, deneysel olarak karşılaştır
+        blurred = cv2.GaussianBlur(frame_inpainted, (5, 5), 0)  # Daha hızlı alternatif
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         
-        # Renk maskesi - tespit_led.py ile aynı
+        # Renk maskesi - OPTIMIZE: tuple kullan (np.array yerine)
         mask = cv2.inRange(hsv, lower_bound, upper_bound)
         
-        # Connected Components ile filtreleme - tespit_led.py ile aynı
-        num_labels, labels = cv2.connectedComponents(mask)
-        filtered_mask = np.zeros_like(mask, dtype=np.uint8)
-
-        # cv2.imshow('maskeee', frame_inpainted)
+        # Connected Components ile filtreleme - OPTIMIZE: WithStats kullanarak performans artışı
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
         
+        # Tek geçişte valid label'ları bul
+        valid_labels = []
         for label in range(1, num_labels):
-            region_mask = (labels == label).astype("uint8") * 255
-            area = cv2.countNonZero(region_mask)
+            area = stats[label, cv2.CC_STAT_AREA]
             if min_alan <= area <= max_alan:
-                filtered_mask = cv2.bitwise_or(filtered_mask, region_mask)
+                valid_labels.append(label)
         
-        mask = filtered_mask
+        # Vektörize mask oluşturma (çok daha hızlı)
+        if valid_labels:
+            mask = np.isin(labels, valid_labels).astype(np.uint8) * 255
+        else:
+            mask = np.zeros_like(mask, dtype=np.uint8)
 
-        # Konturları bul - PARLALIK MASKESİ ÜZERİNDEN (tespit_led.py ile TAM AYNI)
-        contours, _ = cv2.findContours(mask_parlak.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Konturları bul - OPTIMIZE: copy() gereksiz, findContours artık mask'ı değiştirmiyor
+        contours, _ = cv2.findContours(mask_parlak, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         led_merkezleri = []
-        areas = []
+        # areas değişkenini kaldırdık - kullanılmıyor
         
-        # Her konturu işle - tespit_led.py ile aynı mantık
+        # Her konturu işle - OPTIMIZE: Gereksiz işlemleri azalt
         for c in contours:
             area = cv2.contourArea(c)
-            areas.append(area)
             
             # Alan kontrolü
             if area < min_alan or area > max_alan:
@@ -433,13 +432,11 @@ class MyDetector:
             if dairesellik < dairesellik_esigi:
                 continue
             
-            # Ortalama HSV kontrolü - tespit_led.py ile TAM AYNI
-            # NOT: mask değil, renk maskesi olmayan genel mask kullanılıyor
+            # OPTIMIZE: Ortalama HSV kontrolü - tek seferde tüm kanalları al
             mask_c = np.zeros_like(mask)
             cv2.drawContours(mask_c, [c], -1, 255, -1)
-            mean_h = cv2.mean(hsv[:, :, 0], mask=mask_c)[0]
-            mean_s = cv2.mean(hsv[:, :, 1], mask=mask_c)[0]
-            mean_v = cv2.mean(hsv[:, :, 2], mask=mask_c)[0]
+            mean_hsv = cv2.mean(hsv, mask=mask_c)[:3]  # Tek çağrıda 3 kanal
+            mean_s, mean_v = mean_hsv[1], mean_hsv[2]
             
             # tespit_led.py ile aynı eşik değerleri
             if mean_s < 100 or mean_v < 50:
