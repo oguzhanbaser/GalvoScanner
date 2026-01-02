@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galvo Scanner - Video Stream</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            background: linear-gradient(90deg, #e94560, #0f3460);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 5px;
+        }
+
+        .subtitle {
+            color: #a0a0a0;
+            font-size: 0.9rem;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #e94560;
+            font-size: 0.9rem;
+        }
+
+        select {
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #e94560, #0f3460);
+            color: white;
+            cursor: pointer;
+            min-width: 180px;
+            outline: none;
+        }
+
+        select option {
+            background: #1a1a2e;
+            color: white;
+        }
+
+        /* Main Layout - Video + Controls */
+        .main-content {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        /* Video Section - Left */
+        .video-section {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* 2x2 Grid Layout */
+        .video-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .video-container.single-view {
+            display: flex;
+            justify-content: center;
+        }
+
+        .video-container.single-view .video-box {
+            width: 100%;
+            max-width: 100%;
+        }
+
+        .video-container.single-view .video-box img {
+            max-height: 70vh;
+            object-fit: contain;
+        }
+
+        .video-box {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .video-box h3 {
+            text-align: center;
+            margin-bottom: 8px;
+            color: #e94560;
+            font-size: 1rem;
+        }
+
+        .video-box img {
+            border-radius: 8px;
+            width: 100%;
+            height: auto;
+        }
+
+        .video-box.placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 200px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 2px dashed rgba(255, 255, 255, 0.1);
+        }
+
+        .video-box.placeholder .placeholder-text {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        /* Galvo Controls - Right */
+        .galvo-controls {
+            width: 320px;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .galvo-controls h2 {
+            text-align: center;
+            color: #e94560;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 10px;
+        }
+
+        /* Home Button */
+        .home-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            color: white;
+            cursor: pointer;
+            margin-bottom: 25px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .home-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(74, 222, 128, 0.4);
+        }
+
+        .home-btn:active {
+            transform: translateY(0);
+        }
+
+        .home-btn.loading {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        /* Motor Sliders */
+        .motor-control {
+            margin-bottom: 25px;
+        }
+
+        .motor-control label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        .motor-control .value {
+            background: rgba(233, 69, 96, 0.3);
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 1rem;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .motor-control input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .motor-control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #e94560, #0f3460);
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(233, 69, 96, 0.5);
+        }
+
+        .motor-control input[type="range"]::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #e94560, #0f3460);
+            cursor: pointer;
+            border: none;
+        }
+
+        /* Apply Button */
+        .apply-btn {
+            width: 100%;
+            padding: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #e94560, #0f3460);
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .apply-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(233, 69, 96, 0.4);
+        }
+
+        /* Tracking Button */
+        .tracking-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            color: white;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .tracking-btn.start {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+        }
+
+        .tracking-btn.start:hover {
+            box-shadow: 0 5px 20px rgba(34, 197, 94, 0.4);
+        }
+
+        .tracking-btn.stop {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+        }
+
+        .tracking-btn.stop:hover {
+            box-shadow: 0 5px 20px rgba(239, 68, 68, 0.4);
+        }
+
+        /* Color Picker Section */
+        .color-picker-section {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .color-picker-section h4 {
+            color: #e94560;
+            font-size: 0.95rem;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .color-picker-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .color-pick-btn {
+            flex: 1;
+            padding: 10px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .color-pick-btn.blue {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        }
+
+        .color-pick-btn.red {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+        }
+
+        .color-pick-btn.active {
+            border-color: #fff;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+            transform: scale(1.05);
+        }
+
+        .color-pick-btn .color-preview {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            background: #333;
+        }
+
+        .color-info {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 5px;
+        }
+
+        /* Video box cursor when picking */
+        .video-box.picking img {
+            cursor: crosshair;
+        }
+
+        /* Zoom Preview */
+        .zoom-preview-section {
+            margin-top: 15px;
+            display: none;
+        }
+
+        .zoom-preview-section.active {
+            display: block;
+        }
+
+        .zoom-preview-section h5 {
+            color: #e94560;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .zoom-preview-container {
+            position: relative;
+            width: 100%;
+            height: 120px;
+            background: #111;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #zoomCanvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .zoom-crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .zoom-crosshair::before,
+        .zoom-crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(233, 69, 96, 0.8);
+        }
+
+        .zoom-crosshair::before {
+            width: 1px;
+            height: 20px;
+            top: -10px;
+            left: 0;
+        }
+
+        .zoom-crosshair::after {
+            width: 20px;
+            height: 1px;
+            top: 0;
+            left: -10px;
+        }
+
+        .zoom-coords {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            color: #4ade80;
+            font-family: monospace;
+        }
+
+        /* Status */
+        .status {
+            text-align: center;
+            margin-top: 15px;
+            padding: 8px;
+            background: rgba(0, 255, 0, 0.1);
+            border-radius: 8px;
+            color: #4ade80;
+            font-size: 0.9rem;
+        }
+
+        .status.error {
+            background: rgba(255, 0, 0, 0.1);
+            color: #f87171;
+        }
+
+        /* Connection Status */
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .connection-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f87171;
+        }
+
+        .connection-dot.connected {
+            background: #4ade80;
+        }
+
+        /* Log Console */
+        .log-console {
+            margin-top: 20px;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: rgba(233, 69, 96, 0.2);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .log-header h3 {
+            color: #e94560;
+            font-size: 0.95rem;
+            margin: 0;
+        }
+
+        .log-header .log-count {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .log-content {
+            height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.75rem;
+            line-height: 1.5;
+        }
+
+        .log-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .log-content::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .log-content::-webkit-scrollbar-thumb {
+            background: rgba(233, 69, 96, 0.5);
+            border-radius: 3px;
+        }
+
+        .log-entry {
+            padding: 3px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: #a0e0a0;
+        }
+
+        .log-entry:first-child {
+            color: #4ade80;
+            font-weight: 500;
+        }
+
+        .log-timestamp {
+            color: #888;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-size: 0.8rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .main-content {
+                flex-direction: column;
+            }
+
+            .galvo-controls {
+                width: 100%;
+                max-width: 400px;
+                margin: 0 auto;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .video-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 Galvo Scanner</h1>
+            <p class="subtitle">Raspberry Pi Video Stream & Motor Control</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="frameSelect">📹 Görüntü Seçimi</label>
+                <select id="frameSelect" onchange="changeFrame()">
+                    <option value="all">Tümünü Göster (2x2)</option>
+                    <option value="original">Orijinal Görüntü</option>
+                    <option value="laser">Lazer Tespit</option>
+                    <option value="led">LED Tespit</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Video Section - Left -->
+            <div class="video-section">
+                <div class="video-container" id="videoContainer">
+                    <div class="video-box" id="box-original">
+                        <h3>📷 Orijinal</h3>
+                        <img src="/video_feed/original" alt="Orijinal Görüntü">
+                    </div>
+                    <div class="video-box" id="box-laser">
+                        <h3>🔴 Lazer Tespit</h3>
+                        <img src="/video_feed/laser" alt="Lazer Tespit">
+                    </div>
+                    <div class="video-box" id="box-led">
+                        <h3>💡 LED Tespit</h3>
+                        <img src="/video_feed/led" alt="LED Tespit">
+                    </div>
+                    <div class="video-box placeholder" id="box-placeholder">
+                        <div class="placeholder-text">📊 Gelecek Özellik</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Galvo Controls - Right -->
+            <div class="galvo-controls">
+                <h2>⚙️ Galvo Kontrol</h2>
+
+                <!-- Home Button -->
+                <button class="home-btn" id="homeBtn" onclick="sendHome()">
+                    🏠 Home Position
+                </button>
+
+                <!-- Motor X Slider -->
+                <div class="motor-control">
+                    <label>
+                        <span>Motor X</span>
+                        <span class="value" id="motorXValue">0</span>
+                    </label>
+                    <input type="range" id="motorX" min="-500" max="500" value="0"
+                        oninput="updateMotorValue('X', this.value)">
+                </div>
+
+                <!-- Motor Y Slider -->
+                <div class="motor-control">
+                    <label>
+                        <span>Motor Y</span>
+                        <span class="value" id="motorYValue">0</span>
+                    </label>
+                    <input type="range" id="motorY" min="-500" max="500" value="0"
+                        oninput="updateMotorValue('Y', this.value)">
+                </div>
+
+                <!-- Apply Button -->
+                <button class="apply-btn" onclick="applyMotorPosition()">
+                    📤 Pozisyon Gönder
+                </button>
+
+                <!-- Tracking Start/Stop Button -->
+                <button class="tracking-btn start" id="trackingBtn" onclick="toggleTracking()">
+                    ▶️ Takibi Başlat
+                </button>
+
+                <!-- Color Picker Section -->
+                <div class="color-picker-section">
+                    <h4>🎨 Renk Seçici</h4>
+                    <div class="color-picker-buttons">
+                        <button class="color-pick-btn blue" id="bluePickBtn" onclick="startColorPick('blue')">
+                            <div class="color-preview" id="bluePreview"></div>
+                            <span>Mavi Seç</span>
+                            <span class="color-info" id="blueInfo">Seçilmedi</span>
+                        </button>
+                        <button class="color-pick-btn red" id="redPickBtn" onclick="startColorPick('red')">
+                            <div class="color-preview" id="redPreview"></div>
+                            <span>Kırmızı Seç</span>
+                            <span class="color-info" id="redInfo">Seçilmedi</span>
+                        </button>
+                    </div>
+
+                    <!-- Zoom Preview -->
+                    <div class="zoom-preview-section" id="zoomPreviewSection">
+                        <h5>🔍 Yakınlaştırma</h5>
+                        <div class="zoom-preview-container">
+                            <canvas id="zoomCanvas" width="200" height="120"></canvas>
+                            <div class="zoom-crosshair"></div>
+                            <div class="zoom-coords" id="zoomCoords">X: 0, Y: 0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Connection Status -->
+                <div class="connection-status">
+                    <div class="connection-dot" id="connectionDot"></div>
+                    <span id="connectionText">Seri Port: Bağlanıyor...</span>
+                </div>
+
+                <div class="status" id="status">
+                    ✅ Hazır
+                </div>
+            </div>
+        </div>
+
+        <!-- Log Console -->
+        <div class="log-console">
+            <div class="log-header">
+                <h3>📋 Sistem Logları</h3>
+                <span class="log-count" id="logCount">0 kayıt</span>
+            </div>
+            <div class="log-content" id="logContent">
+                <div class="log-entry">Loglar yükleniyor...</div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Galvo Scanner &copy; 2025 | Flask Video Stream</p>
+        </footer>
+    </div>
+
+    <script>
+        // Frame selection
+        function changeFrame() {
+            const select = document.getElementById('frameSelect');
+            const selected = select.value;
+            const container = document.getElementById('videoContainer');
+
+            const boxes = {
+                'original': document.getElementById('box-original'),
+                'laser': document.getElementById('box-laser'),
+                'led': document.getElementById('box-led'),
+                'placeholder': document.getElementById('box-placeholder')
+            };
+
+            if (selected === 'all') {
+                container.classList.remove('single-view');
+                Object.values(boxes).forEach(box => box.style.display = 'block');
+            } else {
+                container.classList.add('single-view');
+                Object.entries(boxes).forEach(([key, box]) => {
+                    box.style.display = (key === selected) ? 'block' : 'none';
+                });
+            }
+        }
+
+        // Update motor value display
+        function updateMotorValue(motor, value) {
+            document.getElementById('motor' + motor + 'Value').textContent = value;
+        }
+
+        // Send home command
+        async function sendHome() {
+            const btn = document.getElementById('homeBtn');
+            const status = document.getElementById('status');
+
+            btn.classList.add('loading');
+            btn.textContent = '⏳ Gönderiliyor...';
+
+            try {
+                const response = await fetch('/api/home', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    status.textContent = '✅ Home pozisyonuna gönderildi';
+                    status.classList.remove('error');
+                    // Reset sliders
+                    document.getElementById('motorX').value = 0;
+                    document.getElementById('motorY').value = 0;
+                    document.getElementById('motorXValue').textContent = '0';
+                    document.getElementById('motorYValue').textContent = '0';
+                } else {
+                    status.textContent = '❌ Hata: ' + data.message;
+                    status.classList.add('error');
+                }
+            } catch (error) {
+                status.textContent = '❌ Bağlantı hatası';
+                status.classList.add('error');
+            }
+
+            btn.classList.remove('loading');
+            btn.innerHTML = '🏠 Home Position';
+        }
+
+        // Apply motor position
+        async function applyMotorPosition() {
+            const motorX = document.getElementById('motorX').value;
+            const motorY = document.getElementById('motorY').value;
+            const status = document.getElementById('status');
+
+            try {
+                const response = await fetch('/api/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x: parseInt(motorX), y: parseInt(motorY) })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    status.textContent = `✅ Pozisyon: X=${motorX}, Y=${motorY}`;
+                    status.classList.remove('error');
+                } else {
+                    status.textContent = '❌ Hata: ' + data.message;
+                    status.classList.add('error');
+                }
+            } catch (error) {
+                status.textContent = '❌ Bağlantı hatası';
+                status.classList.add('error');
+            }
+        }
+
+        // Check connection status periodically
+        async function checkConnection() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+
+                const dot = document.getElementById('connectionDot');
+                const text = document.getElementById('connectionText');
+
+                if (data.serial_connected) {
+                    dot.classList.add('connected');
+                    text.textContent = 'Seri Port: Bağlı';
+                } else {
+                    dot.classList.remove('connected');
+                    text.textContent = 'Seri Port: Bağlı Değil';
+                }
+            } catch (error) {
+                document.getElementById('connectionDot').classList.remove('connected');
+                document.getElementById('connectionText').textContent = 'Seri Port: Hata';
+            }
+        }
+
+        // Check connection on load and every 5 seconds
+        checkConnection();
+        setInterval(checkConnection, 5000);
+
+        // Fetch and display logs
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const data = await response.json();
+
+                const logContent = document.getElementById('logContent');
+                const logCount = document.getElementById('logCount');
+
+                if (data.logs && data.logs.length > 0) {
+                    logContent.innerHTML = data.logs.map(log =>
+                        `<div class="log-entry">${log}</div>`
+                    ).join('');
+                    logCount.textContent = `${data.logs.length} kayıt`;
+                } else {
+                    logContent.innerHTML = '<div class="log-entry">Henüz log yok...</div>';
+                    logCount.textContent = '0 kayıt';
+                }
+            } catch (error) {
+                console.error('Log fetch hatası:', error);
+            }
+        }
+
+        // Fetch logs every 500ms
+        fetchLogs();
+        setInterval(fetchLogs, 500);
+
+        // Tracking state
+        let isTracking = false;
+
+        // Toggle tracking
+        async function toggleTracking() {
+            const btn = document.getElementById('trackingBtn');
+            const endpoint = isTracking ? '/api/tracking/stop' : '/api/tracking/start';
+
+            try {
+                const response = await fetch(endpoint, { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    isTracking = data.tracking;
+                    updateTrackingButton();
+                }
+            } catch (error) {
+                console.error('Tracking toggle hatası:', error);
+            }
+        }
+
+        // Update tracking button appearance
+        function updateTrackingButton() {
+            const btn = document.getElementById('trackingBtn');
+            if (isTracking) {
+                btn.classList.remove('start');
+                btn.classList.add('stop');
+                btn.innerHTML = '⏹️ Takibi Durdur';
+            } else {
+                btn.classList.remove('stop');
+                btn.classList.add('start');
+                btn.innerHTML = '▶️ Takibi Başlat';
+            }
+        }
+
+        // Check tracking status on load
+        async function checkTrackingStatus() {
+            try {
+                const response = await fetch('/api/tracking/status');
+                const data = await response.json();
+                isTracking = data.tracking;
+                updateTrackingButton();
+            } catch (error) {
+                console.error('Tracking status hatası:', error);
+            }
+        }
+
+        // Check tracking status on page load
+        checkTrackingStatus();
+
+        // Color picking state
+        let colorPickMode = null; // 'blue' or 'red' or null
+
+        // Start color picking mode
+        function startColorPick(colorType) {
+            const blueBtn = document.getElementById('bluePickBtn');
+            const redBtn = document.getElementById('redPickBtn');
+            const originalBox = document.getElementById('box-original');
+            const zoomSection = document.getElementById('zoomPreviewSection');
+
+            if (colorPickMode === colorType) {
+                // Deactivate
+                colorPickMode = null;
+                blueBtn.classList.remove('active');
+                redBtn.classList.remove('active');
+                originalBox.classList.remove('picking');
+                zoomSection.classList.remove('active');
+                document.getElementById('status').textContent = '✅ Renk seçimi iptal edildi';
+            } else {
+                // Activate
+                colorPickMode = colorType;
+                blueBtn.classList.remove('active');
+                redBtn.classList.remove('active');
+
+                if (colorType === 'blue') {
+                    blueBtn.classList.add('active');
+                } else {
+                    redBtn.classList.add('active');
+                }
+
+                originalBox.classList.add('picking');
+                zoomSection.classList.add('active');
+                document.getElementById('status').textContent = `🎯 Orijinal görüntüye tıklayarak ${colorType === 'blue' ? 'MAVİ' : 'KIRMIZI'} rengi seçin`;
+            }
+        }
+
+        // Handle click on original video
+        document.getElementById('box-original').addEventListener('click', async function (e) {
+            if (!colorPickMode) return;
+
+            const img = this.querySelector('img');
+            const rect = img.getBoundingClientRect();
+
+            // Calculate relative position
+            const relX = (e.clientX - rect.left) / rect.width;
+            const relY = (e.clientY - rect.top) / rect.height;
+
+            // Assume frame size (will be corrected by server)
+            const frameWidth = 640;
+            const frameHeight = 480;
+
+            const x = Math.round(relX * frameWidth);
+            const y = Math.round(relY * frameHeight);
+
+            try {
+                const response = await fetch('/api/get_pixel_color', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x, y, color_type: colorPickMode })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    const color = data.color;
+                    const preview = document.getElementById(colorPickMode + 'Preview');
+                    const info = document.getElementById(colorPickMode + 'Info');
+
+                    preview.style.background = `rgb(${color.r}, ${color.g}, ${color.b})`;
+                    info.textContent = `H:${color.h} S:${color.s} V:${color.v}`;
+
+                    document.getElementById('status').textContent = `✅ ${colorPickMode.toUpperCase()} renk seçildi: RGB(${color.r},${color.g},${color.b})`;
+                    document.getElementById('status').classList.remove('error');
+
+                    // Deactivate pick mode
+                    startColorPick(colorPickMode);
+                } else {
+                    document.getElementById('status').textContent = '❌ ' + data.message;
+                    document.getElementById('status').classList.add('error');
+                }
+            } catch (error) {
+                document.getElementById('status').textContent = '❌ Renk seçimi hatası';
+                document.getElementById('status').classList.add('error');
+            }
+        });
+
+        // Zoom preview - handle mousemove on original video
+        const zoomCanvas = document.getElementById('zoomCanvas');
+        const zoomCtx = zoomCanvas.getContext('2d');
+        const zoomCoords = document.getElementById('zoomCoords');
+        const zoomLevel = 4; // 4x magnification
+
+        document.getElementById('box-original').addEventListener('mousemove', function (e) {
+            if (!colorPickMode) return;
+
+            const img = this.querySelector('img');
+            const rect = img.getBoundingClientRect();
+
+            // Calculate relative position
+            const relX = (e.clientX - rect.left) / rect.width;
+            const relY = (e.clientY - rect.top) / rect.height;
+
+            // Clamp values
+            if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return;
+
+            // Create temporary image to draw zoomed region
+            const tempImg = new Image();
+            tempImg.crossOrigin = 'anonymous';
+            tempImg.src = img.src;
+
+            // Calculate source region (centered on mouse)
+            const sourceWidth = zoomCanvas.width / zoomLevel;
+            const sourceHeight = zoomCanvas.height / zoomLevel;
+            const sourceX = (relX * tempImg.naturalWidth) - (sourceWidth / 2);
+            const sourceY = (relY * tempImg.naturalHeight) - (sourceHeight / 2);
+
+            // Draw zoomed region
+            zoomCtx.drawImage(
+                img,
+                Math.max(0, sourceX), Math.max(0, sourceY),
+                sourceWidth, sourceHeight,
+                0, 0,
+                zoomCanvas.width, zoomCanvas.height
+            );
+
+            // Update coordinates display
+            const frameX = Math.round(relX * (tempImg.naturalWidth || 640));
+            const frameY = Math.round(relY * (tempImg.naturalHeight || 480));
+            zoomCoords.textContent = `X: ${frameX}, Y: ${frameY}`;
+        });
+    </script>
+</body>
+
+</html>

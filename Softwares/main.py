@@ -57,12 +57,16 @@ if __name__ == "__main__":
 
     detector = MyDetector(laser_settings_file="laser_trackbar_settings.json", led_settings_file="led_settings.json")  # 0 = varsayılan kamera
 
-    ser = serial.Serial('COM5', 115200, timeout=1, dsrdtr=True)
+    
+    sendCommand = False
+
+    if sendCommand == True:
+        ser = serial.Serial('/dev/ttyS0', 115200, timeout=1, dsrdtr=True)
     
     # ser.write(b'H')
     # waitForSerialData(ser, timeout=30)
 
-    ser.write(b'G0,0,')
+        ser.write(b'G0,0,')
     # detector.run(source_type='video')
 
     last_time = 0
@@ -146,7 +150,6 @@ if __name__ == "__main__":
                 command = f'G{step_y},{step_x},'
                 # command = f'G0,{step_x},'
 
-                sendCommand = True
                 if sendCommand == True:
                     ser.write(command.encode())
                     
