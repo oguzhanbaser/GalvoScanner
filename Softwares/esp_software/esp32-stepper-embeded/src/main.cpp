@@ -317,9 +317,9 @@ void loop()
     }
   }
 
-  if (Serial1.available())
+  if (Serial.available())
   {
-    char command = Serial1.read();
+    char command = Serial.read();
     if (command == 'H')
     {
       homingActive = true;
@@ -328,8 +328,8 @@ void loop()
     }
     else if (command == 'G')
     {
-      int xdist = Serial1.parseInt();
-      int ydist = Serial1.parseInt();
+      int xdist = Serial.parseInt();
+      int ydist = Serial.parseInt();
       // move_To(xdist, ydist); // Call the move_To function with the received coordinates
       move_steps(xdist, ydist); // Call the move_To function with the received coordinates
     }

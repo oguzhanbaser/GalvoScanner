@@ -8,7 +8,7 @@ from collections import deque
 import serial
 from myDetector import MyDetector
 from myCamera import MyCamera
-
+from gpiozero import LED, MCP3008
 
 class GalvoDetection:
     """Galvo tarayıcı için algılama ve kontrol sınıfı"""
@@ -24,8 +24,21 @@ class GalvoDetection:
         self.app_state = app_state
         self.config = config or {}
         
+        # Helper method for logging
+        self.add_log = lambda msg: self.app_state.add_log(msg) if hasattr(self.app_state, 'add_log') else None
+
+        self.led1 = LED(17)
+        self.led2 = LED(27)
+        self.led3 = LED(18)
+        self.led4 = LED(22)
+
+        adcVal1 = MCP3008(channel=0)
+        adcVal2 = MCP3008(channel=1)
+        adcVal3 = MCP3008(channel=2)
+        adcVal4 = MCP3008(channel=3)
+        
         # Varsayılan yapılandırma
-        self.serial_port_name = self.config.get('serial_port', 'COM5')
+        self.serial_port_name = self.config.get('serial_port', '/dev/ttyS0')
         self.video_source = self.config.get('video_source', "http://192.168.19.18:4500/video_roi")
         self.laser_settings = self.config.get('laser_settings', "laser_trackbar_settings.json")
         self.led_settings = self.config.get('led_settings', "led_settings.json")
@@ -43,35 +56,41 @@ class GalvoDetection:
         self.laser_buffer = deque(maxlen=3)
         self.led_buffer = deque(maxlen=3)
 
+        self.led1.on()
+        self.led2.on()
+        self.led3.on()
+        self.led4.on()
+
+        time.sleep(0.5)
+
+        # self.led1.off()
+        self.led2.off()
+        self.led3.off()
+        self.led4.off()
+
         if self.useCamera:
             self.camera = MyCamera()
     
     def init_serial(self):
         """Seri portu başlat"""
         try:
-            self.serial_port = serial.Serial(
+            self.app_state.serial_port = serial.Serial(
                 self.serial_port_name, 
                 115200, 
                 timeout=1, 
                 dsrdtr=True
             )
-            self.serial_port.write(b'G0,0,')
-            self.serial_connected = True
-            
-            # Global state'i güncelle
-            self.app_state['serial_port'] = self.serial_port
-            self.app_state['serial_connected'] = True
+            self.app_state.serial_port.write(b'G0,0,')
+            self.app_state.serial_connected = True
             
             print(f"✅ Seri port bağlandı: {self.serial_port_name}")
-            self.app_state['add_log'](f"✅ Seri port bağlandı: {self.serial_port_name}")
+            self.add_log(f"✅ Seri port bağlandı: {self.serial_port_name}")
             return True
         except Exception as e:
             print(f"⚠️ Seri port bağlantı hatası: {e}")
-            self.app_state['add_log'](f"⚠️ Seri port hatası: {e}")
-            self.serial_connected = False
-            self.serial_port = None
-            self.app_state['serial_port'] = None
-            self.app_state['serial_connected'] = False
+            self.add_log(f"⚠️ Seri port hatası: {e}")
+            self.app_state.serial_connected = False
+            self.app_state.serial_port = None
             return False
     
     def init_video(self):
@@ -97,14 +116,14 @@ class GalvoDetection:
     
     def wait_for_serial_data(self, timeout=2):
         """Seri porttan veri bekle"""
-        if not self.serial_port:
+        if not self.app_state.serial_port:
             return None
         mTime = time.time()
-        while self.serial_port.in_waiting == 0:
+        while self.app_state.serial_port.in_waiting == 0:
             if time.time() - mTime > timeout:
                 return None
             time.sleep(0.01)
-        data = self.serial_port.readline().decode('utf-8').rstrip()
+        data = self.app_state.serial_port.readline().decode('utf-8').rstrip()
         return data
     
     def parse_serial_command(self, command_str):
@@ -127,18 +146,18 @@ class GalvoDetection:
         # cv2.waitKey(1)
 
         # Frame'leri güncelle - OPTIMIZE: annotated_frame zaten kopyalandı, tekrar copy() gereksiz
-        with self.app_state['frame_lock']:
-            self.app_state['current_frames']['original'] = frame
+        with self.app_state.frame_lock:
+            self.app_state.current_frames['original'] = frame
             if led_points is not None:
-                self.app_state['current_frames']['led'] = led_points['annotated_frame']
+                self.app_state.current_frames['led'] = led_points['annotated_frame']
             if laser_point is not None:
-                self.app_state['current_frames']['laser'] = laser_point['annotated_frame']
+                self.app_state.current_frames['laser'] = laser_point['annotated_frame']
         
         return laser_point, led_points
     
     def calculate_tracking(self, laser_point, led_points):
         """Takip hesaplamalarını yap - OPTIMIZE: Numpy vektör işlemleri kullanıldı"""
-        if not self.app_state.get('tracking_enabled', False):
+        if not self.app_state.tracking_enabled:
             return None
         
         if laser_point is None or led_points is None:
@@ -191,19 +210,19 @@ class GalvoDetection:
         self.last_time = time.time()
         command = f'G{self.step_y},{self.step_x},'
         
-        if self.serial_connected and self.serial_port is not None:
+        if self.app_state.serial_connected and self.app_state.serial_port is not None:
             try:
-                self.serial_port.write(command.encode())
+                self.app_state.serial_port.write(command.encode())
                 recData = self.wait_for_serial_data()
                 if recData:
                     cmd_data = self.parse_serial_command(recData)
                     if cmd_data and (cmd_data['command'] != 'M' or cmd_data['data'] != 'O'):
-                        self.app_state['add_log'](f"Beklenmeyen yanıt: {recData}")
+                        self.add_log(f"Beklenmeyen yanıt: {recData}")
             except Exception as e:
-                self.app_state['add_log'](f"Seri port hatası: {e}")
+                self.add_log(f"Seri port hatası: {e}")
         
         log_msg = f"DiffX: {diff_x:+4d}, DiffY: {diff_y:+4d} | StepX: {self.step_x:+4d}, StepY: {self.step_y:+4d} | Komut: {command}"
-        self.app_state['add_log'](log_msg)
+        self.add_log(log_msg)
         print(log_msg)
         
         return True
@@ -219,6 +238,11 @@ class GalvoDetection:
         print("🚀 Algılama döngüsü başlatıldı")
         
         while True:
+
+            # if self.app_state.serial_port is not None and self.app_state.serial_connected:
+            #     while self.app_state.serial_port.in_waiting > 0:
+            #         print(self.app_state.serial_port.read())
+
             if self.useCamera:
                 frame = self.camera.get_frame_roi()
                 ret = True
@@ -242,6 +266,7 @@ class GalvoDetection:
             
             # Hareket gönder
             if tracking_result:
+                print(f"Takip sonucu: DiffX={tracking_result['diff_x']}, DiffY={tracking_result['diff_y']}")
                 self.send_movement(tracking_result['diff_x'], tracking_result['diff_y'])
     
 
@@ -251,8 +276,8 @@ class GalvoDetection:
         """Kaynakları temizle"""
         if self.cap and not self.useCamera:
             self.cap.release()
-        if self.serial_port:
-            self.serial_port.close()
+        if self.app_state.serial_port:
+            self.app_state.serial_port.close()
         if self.useCamera and self.camera:
             # Kamerayı durdur
             try:

@@ -4,44 +4,51 @@ import time
 from flask import Flask, Response, render_template, jsonify, request
 import threading
 from collections import deque
-from myDetector import MyDetector
-import serial
+# from myDetector import MyDetector
+import serial, threading
 from datetime import datetime
+from detection import GalvoDetection
 
-# Global değişkenler - frame'leri tutmak için
-current_frames = {
-    'original': None,
-    'laser': None,
-    'led': None
-}
-frame_lock = threading.Lock()
+# Paylaşılan state sınıfı - tüm modüller arasında senkron state yönetimi
+class SharedState:
+    def __init__(self):
+        # Frame'leri tutmak için
+        self.current_frames = {
+            'original': None,
+            'laser': None,
+            'led': None
+        }
+        self.frame_lock = threading.Lock()
+        
+        # Seri port durumu
+        self.serial_port = None
+        self.serial_connected = False
+        self.serial_lock = threading.Lock()
+        
+        # Tracking durumu
+        self.tracking_enabled = False
+        
+        # Global detector nesnesi
+        self.detector = None
+        
+        # Seçilen renkler
+        self.selected_colors = {
+            'blue': None,  # LED
+            'red': None    # Laser
+        }
+        
+        # Log buffer
+        self.log_buffer = deque(maxlen=100)
+        self.log_lock = threading.Lock()
 
-# Seri port durumu için global değişkenler
-serial_port = None
-serial_connected = False
-serial_lock = threading.Lock()
-
-# Tracking (takip) durumu - başlat/durdur kontrolü
-tracking_enabled = False
-
-# Global detector nesnesi - ayar kaydetme için
-detector = None
-
-# Seçilen renkler - detector'dan yüklenecek
-selected_colors = {
-    'blue': None,  # LED
-    'red': None    # Laser
-}
-
-# Log buffer - son 100 log satırı
-log_buffer = deque(maxlen=100)
-log_lock = threading.Lock()
+# Global state instance'ı oluştur
+shared_state = SharedState()
 
 def add_log(message):
     """Log buffer'a mesaj ekle"""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    with log_lock:
-        log_buffer.appendleft(f"[{timestamp}] {message}")
+    with shared_state.log_lock:
+        shared_state.log_buffer.appendleft(f"[{timestamp}] {message}")
 
 # Flask uygulaması
 app = Flask(__name__)
@@ -68,15 +75,20 @@ def parseSerialCommand(command_str):
         print(f"Seri komut ayrıştırma hatası: {e}")
     return cmd_data
 
-def send_galvo_command(command):
+def send_galvo_command(command, pTimeout=2):
     """Galvo'ya komut gönder"""
-    global serial_port, serial_connected
-    with serial_lock:
-        if serial_connected and serial_port is not None:
+    with shared_state.serial_lock:
+        if shared_state.serial_connected and shared_state.serial_port is not None:
             try:
-                serial_port.write(command.encode())
-                recData = waitForSerialData(serial_port)
-                return True, recData
+                while shared_state.serial_port.in_waiting > 0:
+                    shared_state.serial_port.read()  # Önceki verileri temizle
+
+                shared_state.serial_port.write(command.encode())
+                recData = waitForSerialData(shared_state.serial_port, timeout=pTimeout)
+                if recData is None:
+                    return False, "Zaman aşımı: Yanıt alınamadı"
+                else:
+                    return True, recData
             except Exception as e:
                 print(f"Seri port hatası: {e}")
                 return False, str(e)
@@ -85,8 +97,8 @@ def send_galvo_command(command):
 def generate_frames(frame_type):
     """Video frame'lerini MJPEG formatında stream et"""
     while True:
-        with frame_lock:
-            frame = current_frames.get(frame_type)
+        with shared_state.frame_lock:
+            frame = shared_state.current_frames.get(frame_type)
         
         if frame is not None:
             ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -113,19 +125,18 @@ def video_feed(frame_type):
 @app.route('/api/status')
 def api_status():
     """Sistem durumunu döndür"""
-    global serial_connected
     return jsonify({
-        'serial_connected': serial_connected,
+        'serial_connected': shared_state.serial_connected,
         'status': 'ok'
     })
 
 @app.route('/api/home', methods=['POST'])
 def api_home():
     """Home pozisyonuna git"""
-    success, message = send_galvo_command('H')
-    if success:
-        # Ardından 0,0 pozisyonuna git
-        send_galvo_command('G0,0,')
+    success, message = send_galvo_command('H', pTimeout=60)
+    # if success:
+    #     # Ardından 0,0 pozisyonuna git
+    #     send_galvo_command('G0,0,')
     return jsonify({
         'success': success,
         'message': message if not success else 'Home pozisyonuna gönderildi'
@@ -140,6 +151,8 @@ def api_move():
     
     command = f'G{y},{x},'
     success, message = send_galvo_command(command)
+
+    # print(success, message)
     
     return jsonify({
         'success': success,
@@ -150,42 +163,39 @@ def api_move():
 @app.route('/api/logs')
 def api_logs():
     """Log buffer'ı döndür"""
-    with log_lock:
-        logs = list(log_buffer)
+    with shared_state.log_lock:
+        logs = list(shared_state.log_buffer)
     return jsonify({'logs': logs})
 
 @app.route('/api/tracking/start', methods=['POST'])
 def api_tracking_start():
     """Takip sistemini başlat"""
-    global tracking_enabled
-    tracking_enabled = True
+    shared_state.tracking_enabled = True
     add_log("🚀 Takip sistemi başlatıldı")
     return jsonify({'success': True, 'tracking': True})
 
 @app.route('/api/tracking/stop', methods=['POST'])
 def api_tracking_stop():
     """Takip sistemini durdur"""
-    global tracking_enabled
-    tracking_enabled = False
+    shared_state.tracking_enabled = False
     add_log("⏹️ Takip sistemi durduruldu")
     return jsonify({'success': True, 'tracking': False})
 
 @app.route('/api/tracking/status')
 def api_tracking_status():
     """Takip durumunu döndür"""
-    return jsonify({'tracking': tracking_enabled})
+    return jsonify({'tracking': shared_state.tracking_enabled})
 
 @app.route('/api/get_pixel_color', methods=['POST'])
 def api_get_pixel_color():
     """Orijinal frame'den piksel rengini al ve detector ayarlarına kaydet"""
-    global selected_colors, detector
     data = request.get_json()
     x = data.get('x', 0)
     y = data.get('y', 0)
     color_type = data.get('color_type', 'blue')  # 'blue' (LED) veya 'red' (Laser)
     
-    with frame_lock:
-        frame = current_frames.get('original')
+    with shared_state.frame_lock:
+        frame = shared_state.current_frames.get('original')
     
     if frame is not None:
         # Frame boyutlarını kontrol et
@@ -211,60 +221,60 @@ def api_get_pixel_color():
         }
         
         # Seçilen rengi kaydet
-        selected_colors[color_type] = color_data
+        shared_state.selected_colors[color_type] = color_data
         
         # Detector ayarlarını güncelle ve kaydet
-        if detector is not None:
+        if shared_state.detector is not None:
             H_TOLERANCE = 15
             S_TOLERANCE = 80
             V_TOLERANCE = 80
             
             if color_type == 'blue':  # LED ayarları
-                detector.led_params['H_MIN'] = max(0, int(h_val) - H_TOLERANCE)
-                detector.led_params['H_MAX'] = min(180, int(h_val) + H_TOLERANCE)
-                detector.led_params['S_MIN'] = max(0, int(s_val) - S_TOLERANCE)
-                detector.led_params['S_MAX'] = min(255, int(s_val) + S_TOLERANCE)
-                detector.led_params['V_MIN'] = max(0, int(v_val) - V_TOLERANCE)
-                detector.led_params['V_MAX'] = min(255, int(v_val) + V_TOLERANCE)
-                detector.save_led_settings()
+                shared_state.detector.led_params['H_MIN'] = max(0, int(h_val) - H_TOLERANCE)
+                shared_state.detector.led_params['H_MAX'] = min(180, int(h_val) + H_TOLERANCE)
+                shared_state.detector.led_params['S_MIN'] = max(0, int(s_val) - S_TOLERANCE)
+                shared_state.detector.led_params['S_MAX'] = min(255, int(s_val) + S_TOLERANCE)
+                shared_state.detector.led_params['V_MIN'] = max(0, int(v_val) - V_TOLERANCE)
+                shared_state.detector.led_params['V_MAX'] = min(255, int(v_val) + V_TOLERANCE)
+                shared_state.detector.save_led_settings()
                 add_log(f"🔵 LED renk ayarları kaydedildi: HSV({h_val},{s_val},{v_val})")
                 
             elif color_type == 'red':  # Laser ayarları
                 # Kırmızı renk için özel işlem (H 0-10 veya 170-180)
                 if h_val <= 10:
-                    detector.h_min = max(0, int(h_val) - H_TOLERANCE)
-                    detector.h_max = min(10, int(h_val) + H_TOLERANCE)
-                    detector.h2_min = max(170, 180 - H_TOLERANCE)
-                    detector.h2_max = 180
+                    shared_state.detector.h_min = max(0, int(h_val) - H_TOLERANCE)
+                    shared_state.detector.h_max = min(10, int(h_val) + H_TOLERANCE)
+                    shared_state.detector.h2_min = max(170, 180 - H_TOLERANCE)
+                    shared_state.detector.h2_max = 180
                 elif h_val >= 170:
-                    detector.h_min = 0
-                    detector.h_max = min(10, H_TOLERANCE)
-                    detector.h2_min = max(170, int(h_val) - H_TOLERANCE)
-                    detector.h2_max = min(180, int(h_val) + H_TOLERANCE)
+                    shared_state.detector.h_min = 0
+                    shared_state.detector.h_max = min(10, H_TOLERANCE)
+                    shared_state.detector.h2_min = max(170, int(h_val) - H_TOLERANCE)
+                    shared_state.detector.h2_max = min(180, int(h_val) + H_TOLERANCE)
                 else:
-                    detector.h_min = max(0, int(h_val) - H_TOLERANCE)
-                    detector.h_max = min(180, int(h_val) + H_TOLERANCE)
-                    detector.h2_min = 170
-                    detector.h2_max = 180
+                    shared_state.detector.h_min = max(0, int(h_val) - H_TOLERANCE)
+                    shared_state.detector.h_max = min(180, int(h_val) + H_TOLERANCE)
+                    shared_state.detector.h2_min = 170
+                    shared_state.detector.h2_max = 180
                 
-                detector.s_min = max(0, int(s_val) - S_TOLERANCE)
-                detector.s_max = min(255, int(s_val) + S_TOLERANCE)
-                detector.v_min = max(0, int(v_val) - V_TOLERANCE)
-                detector.v_max = min(255, int(v_val) + V_TOLERANCE)
+                shared_state.detector.s_min = max(0, int(s_val) - S_TOLERANCE)
+                shared_state.detector.s_max = min(255, int(s_val) + S_TOLERANCE)
+                shared_state.detector.v_min = max(0, int(v_val) - V_TOLERANCE)
+                shared_state.detector.v_max = min(255, int(v_val) + V_TOLERANCE)
                 
                 # Laser ayarlarını kaydet
-                detector.settings = {
-                    "H_MIN": detector.h_min, "H_MAX": detector.h_max,
-                    "S_MIN": detector.s_min, "S_MAX": detector.s_max,
-                    "V_MIN": detector.v_min, "V_MAX": detector.v_max,
-                    "H2_MIN": detector.h2_min, "H2_MAX": detector.h2_max,
-                    "MIN_ALAN": detector.min_area, "MAX_ALAN": detector.max_area,
-                    "PARLAKLIK_ESIK": detector.parlaklik_esigi,
-                    "DAIRESELLIK_ESIGI": int(detector.dairesellik_esigi * 100)
+                shared_state.detector.settings = {
+                    "H_MIN": shared_state.detector.h_min, "H_MAX": shared_state.detector.h_max,
+                    "S_MIN": shared_state.detector.s_min, "S_MAX": shared_state.detector.s_max,
+                    "V_MIN": shared_state.detector.v_min, "V_MAX": shared_state.detector.v_max,
+                    "H2_MIN": shared_state.detector.h2_min, "H2_MAX": shared_state.detector.h2_max,
+                    "MIN_ALAN": shared_state.detector.min_area, "MAX_ALAN": shared_state.detector.max_area,
+                    "PARLAKLIK_ESIK": shared_state.detector.parlaklik_esigi,
+                    "DAIRESELLIK_ESIGI": int(shared_state.detector.dairesellik_esigi * 100)
                 }
                 import json
-                with open(detector.LASER_SETTINGS_FILE, "w") as f:
-                    json.dump(detector.settings, f, indent=2)
+                with open(shared_state.detector.LASER_SETTINGS_FILE, "w") as f:
+                    json.dump(shared_state.detector.settings, f, indent=2)
                 add_log(f"🔴 Laser renk ayarları kaydedildi: HSV({h_val},{s_val},{v_val})")
         else:
             add_log(f"⚠️ Detector henüz hazır değil, renk seçildi ama kaydedilemedi")
@@ -280,53 +290,22 @@ def api_get_pixel_color():
 @app.route('/api/selected_colors')
 def api_selected_colors():
     """Seçilen renkleri döndür"""
-    return jsonify(selected_colors)
-
-
-def create_app_state():
-    """Detection modülü için app state sözlüğü oluştur"""
-    return {
-        'current_frames': current_frames,
-        'frame_lock': frame_lock,
-        'serial_port': serial_port,
-        'serial_connected': serial_connected,
-        'serial_lock': serial_lock,
-        'tracking_enabled': tracking_enabled,
-        'add_log': add_log
-    }
+    return jsonify(shared_state.selected_colors)
 
 
 def run_detection():
     """Detection döngüsünü çalıştır"""
-    global detector
-    from detection import GalvoDetection
-    
-    app_state = create_app_state()
-    
-    # Global detector nesnesini oluştur
-    galvo_detection = GalvoDetection(app_state)
-    galvo_detection.init_video()
-    detector = galvo_detection.detector  # myDetector nesnesi
-    
-    # App state'i global değişkenlerle senkronize tut
-    import threading
-    
-    def sync_state():
-        while True:
-            app_state['tracking_enabled'] = tracking_enabled
-            app_state['serial_port'] = serial_port
-            app_state['serial_connected'] = serial_connected
-            time.sleep(0.1)
-    
-    sync_thread = threading.Thread(target=sync_state, daemon=True)
-    sync_thread.start()
-    
     # Detection döngüsünü çalıştır
     galvo_detection.run()
 
 
 if __name__ == "__main__":
     # Algılama döngüsünü ayrı thread'de başlat
+    # Global detector nesnesini oluştur
+    galvo_detection = GalvoDetection(shared_state)
+    galvo_detection.init_video()
+    shared_state.detector = galvo_detection.detector  # myDetector nesnesi
+
     detection_thread = threading.Thread(target=run_detection, daemon=True)
     detection_thread.start()
     
