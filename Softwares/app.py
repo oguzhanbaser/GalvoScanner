@@ -27,6 +27,11 @@ class SharedState:
         
         # Tracking durumu
         self.tracking_enabled = False
+        self.precision_tracking_enabled = False
+        
+        # Motor pozisyonları (slider'ların son değerleri)
+        self.motor_position_x = 0
+        self.motor_position_y = 0
         
         # Global detector nesnesi
         self.detector = None
@@ -127,7 +132,9 @@ def api_status():
     """Sistem durumunu döndür"""
     return jsonify({
         'serial_connected': shared_state.serial_connected,
-        'status': 'ok'
+        'status': 'ok',
+        'motor_x': shared_state.motor_position_x,
+        'motor_y': shared_state.motor_position_y
     })
 
 @app.route('/api/home', methods=['POST'])
@@ -148,6 +155,10 @@ def api_move():
     data = request.get_json()
     x = data.get('x', 0)
     y = data.get('y', 0)
+    
+    # Motor pozisyonlarını kaydet
+    shared_state.motor_position_x = x
+    shared_state.motor_position_y = y
     
     command = f'G{y},{x},'
     success, message = send_galvo_command(command)
@@ -185,6 +196,25 @@ def api_tracking_stop():
 def api_tracking_status():
     """Takip durumunu döndür"""
     return jsonify({'tracking': shared_state.tracking_enabled})
+
+@app.route('/api/tracking/precision/start', methods=['POST'])
+def api_precision_tracking_start():
+    """Hassas takip sistemini başlat"""
+    shared_state.precision_tracking_enabled = True
+    add_log("🎯 Hassas takip sistemi başlatıldı")
+    return jsonify({'success': True, 'precision_tracking': True})
+
+@app.route('/api/tracking/precision/stop', methods=['POST'])
+def api_precision_tracking_stop():
+    """Hassas takip sistemini durdur"""
+    shared_state.precision_tracking_enabled = False
+    add_log("⏸️ Hassas takip sistemi durduruldu")
+    return jsonify({'success': True, 'precision_tracking': False})
+
+@app.route('/api/tracking/precision/status')
+def api_precision_tracking_status():
+    """Hassas takip durumunu döndür"""
+    return jsonify({'precision_tracking': shared_state.precision_tracking_enabled})
 
 @app.route('/api/get_pixel_color', methods=['POST'])
 def api_get_pixel_color():

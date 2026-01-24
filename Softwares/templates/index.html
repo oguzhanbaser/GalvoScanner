@@ -234,6 +234,41 @@
             text-align: center;
         }
 
+        .motor-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .motor-buttons button {
+            flex: 1;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .motor-buttons .decrement {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+        }
+
+        .motor-buttons .increment {
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+
+        .motor-buttons button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .motor-buttons button:active {
+            transform: translateY(0);
+        }
+
         .motor-control input[type="range"] {
             width: 100%;
             height: 8px;
@@ -313,6 +348,40 @@
 
         .tracking-btn.stop:hover {
             box-shadow: 0 5px 20px rgba(239, 68, 68, 0.4);
+        }
+
+        /* Precision Tracking Button */
+        .precision-tracking-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            color: white;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .precision-tracking-btn.start {
+            background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+        }
+
+        .precision-tracking-btn.start:hover {
+            box-shadow: 0 5px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        .precision-tracking-btn.stop {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+        }
+
+        .precision-tracking-btn.stop:hover {
+            box-shadow: 0 5px 20px rgba(245, 158, 11, 0.4);
         }
 
         /* Color Picker Section */
@@ -647,8 +716,12 @@
                         <span>Motor X</span>
                         <span class="value" id="motorXValue">0</span>
                     </label>
-                    <input type="range" id="motorX" min="-500" max="500" value="0"
-                        oninput="updateMotorValue('X', this.value)">
+                    <input type="range" id="motorX" min="-100" max="100" value="0"
+                        oninput="updateMotorValue('X', this.value)" onchange="sendMotorPosition()">
+                    <div class="motor-buttons">
+                        <button class="decrement" onclick="adjustMotor('X', -1)">➖ -1</button>
+                        <button class="increment" onclick="adjustMotor('X', 1)">➕ +1</button>
+                    </div>
                 </div>
 
                 <!-- Motor Y Slider -->
@@ -657,18 +730,22 @@
                         <span>Motor Y</span>
                         <span class="value" id="motorYValue">0</span>
                     </label>
-                    <input type="range" id="motorY" min="-500" max="500" value="0"
-                        oninput="updateMotorValue('Y', this.value)">
+                    <input type="range" id="motorY" min="-100" max="100" value="0"
+                        oninput="updateMotorValue('Y', this.value)" onchange="sendMotorPosition()">
+                    <div class="motor-buttons">
+                        <button class="decrement" onclick="adjustMotor('Y', -1)">➖ -1</button>
+                        <button class="increment" onclick="adjustMotor('Y', 1)">➕ +1</button>
+                    </div>
                 </div>
-
-                <!-- Apply Button -->
-                <button class="apply-btn" onclick="applyMotorPosition()">
-                    📤 Pozisyon Gönder
-                </button>
 
                 <!-- Tracking Start/Stop Button -->
                 <button class="tracking-btn start" id="trackingBtn" onclick="toggleTracking()">
                     ▶️ Takibi Başlat
+                </button>
+
+                <!-- Precision Tracking Start/Stop Button -->
+                <button class="precision-tracking-btn start" id="precisionTrackingBtn" onclick="togglePrecisionTracking()">
+                    🎯 Hassas Takibi Başlat
                 </button>
 
                 <!-- Color Picker Section -->
@@ -677,12 +754,12 @@
                     <div class="color-picker-buttons">
                         <button class="color-pick-btn blue" id="bluePickBtn" onclick="startColorPick('blue')">
                             <div class="color-preview" id="bluePreview"></div>
-                            <span>Mavi Seç</span>
+                            <span>LED Seç</span>
                             <span class="color-info" id="blueInfo">Seçilmedi</span>
                         </button>
                         <button class="color-pick-btn red" id="redPickBtn" onclick="startColorPick('red')">
                             <div class="color-preview" id="redPreview"></div>
-                            <span>Kırmızı Seç</span>
+                            <span>Lazer Seç</span>
                             <span class="color-info" id="redInfo">Seçilmedi</span>
                         </button>
                     </div>
@@ -756,6 +833,47 @@
             document.getElementById('motor' + motor + 'Value').textContent = value;
         }
 
+        // Adjust motor value by increment/decrement and send command
+        async function adjustMotor(motor, delta) {
+            const slider = document.getElementById('motor' + motor);
+            let currentValue = parseInt(slider.value);
+            let newValue = currentValue + delta;
+
+            // Clamp value to slider limits
+            const min = parseInt(slider.min);
+            const max = parseInt(slider.max);
+            newValue = Math.max(min, Math.min(max, newValue));
+
+            // Update slider and display
+            slider.value = newValue;
+            updateMotorValue(motor, newValue);
+
+            // Send the command immediately
+            const motorX = document.getElementById('motorX').value;
+            const motorY = document.getElementById('motorY').value;
+            const status = document.getElementById('status');
+
+            try {
+                const response = await fetch('/api/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x: parseInt(motorX), y: parseInt(motorY) })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    status.textContent = `✅ Motor ${motor}: ${newValue}`;
+                    status.classList.remove('error');
+                } else {
+                    status.textContent = '❌ Hata: ' + data.message;
+                    status.classList.add('error');
+                }
+            } catch (error) {
+                status.textContent = '❌ Bağlantı hatası';
+                status.classList.add('error');
+            }
+        }
+
         // Send home command
         async function sendHome() {
             const btn = document.getElementById('homeBtn');
@@ -790,8 +908,8 @@
             btn.innerHTML = '🏠 Home Position';
         }
 
-        // Apply motor position
-        async function applyMotorPosition() {
+        // Send motor position (called when slider is released)
+        async function sendMotorPosition() {
             const motorX = document.getElementById('motorX').value;
             const motorY = document.getElementById('motorY').value;
             const status = document.getElementById('status');
@@ -806,7 +924,7 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    status.textContent = `✅ Pozisyon: X=${motorX}, Y=${motorY}`;
+                    status.textContent = `✅ Pozisyon Gönderildi: X=${motorX}, Y=${motorY}`;
                     status.classList.remove('error');
                 } else {
                     status.textContent = '❌ Hata: ' + data.message;
@@ -833,6 +951,19 @@
                 } else {
                     dot.classList.remove('connected');
                     text.textContent = 'Seri Port: Bağlı Değil';
+                }
+
+                // Motor pozisyonlarını güncelle
+                if (data.motor_x !== undefined && data.motor_y !== undefined) {
+                    const sliderX = document.getElementById('motorX');
+                    const sliderY = document.getElementById('motorY');
+                    const valueX = document.getElementById('motorXValue');
+                    const valueY = document.getElementById('motorYValue');
+
+                    sliderX.value = data.motor_x;
+                    sliderY.value = data.motor_y;
+                    valueX.textContent = data.motor_x;
+                    valueY.textContent = data.motor_y;
                 }
             } catch (error) {
                 document.getElementById('connectionDot').classList.remove('connected');
@@ -920,6 +1051,56 @@
 
         // Check tracking status on page load
         checkTrackingStatus();
+
+        // Precision tracking state
+        let isPrecisionTracking = false;
+
+        // Toggle precision tracking
+        async function togglePrecisionTracking() {
+            const btn = document.getElementById('precisionTrackingBtn');
+            const endpoint = isPrecisionTracking ? '/api/tracking/precision/stop' : '/api/tracking/precision/start';
+
+            try {
+                const response = await fetch(endpoint, { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    isPrecisionTracking = data.precision_tracking;
+                    updatePrecisionTrackingButton();
+                }
+            } catch (error) {
+                console.error('Precision tracking toggle hatası:', error);
+            }
+        }
+
+        // Update precision tracking button appearance
+        function updatePrecisionTrackingButton() {
+            const btn = document.getElementById('precisionTrackingBtn');
+            if (isPrecisionTracking) {
+                btn.classList.remove('start');
+                btn.classList.add('stop');
+                btn.innerHTML = '⏸️ Hassas Takibi Durdur';
+            } else {
+                btn.classList.remove('stop');
+                btn.classList.add('start');
+                btn.innerHTML = '🎯 Hassas Takibi Başlat';
+            }
+        }
+
+        // Check precision tracking status on load
+        async function checkPrecisionTrackingStatus() {
+            try {
+                const response = await fetch('/api/tracking/precision/status');
+                const data = await response.json();
+                isPrecisionTracking = data.precision_tracking;
+                updatePrecisionTrackingButton();
+            } catch (error) {
+                console.error('Precision tracking status hatası:', error);
+            }
+        }
+
+        // Check precision tracking status on page load
+        checkPrecisionTrackingStatus();
 
         // Color picking state
         let colorPickMode = null; // 'blue' or 'red' or null

@@ -160,6 +160,12 @@ class GalvoDetection:
         if not self.app_state.tracking_enabled:
             return None
         
+        # İlk takip başlangıcında motorların son pozisyonundan başla
+        if len(self.laser_buffer) == 0 and len(self.led_buffer) == 0:
+            self.step_x = self.app_state.motor_position_y
+            self.step_y = self.app_state.motor_position_x
+            self.add_log(f"📍 Takip başlangıç pozisyonu: X={self.step_y}, Y={self.step_x}")
+        
         if laser_point is None or led_points is None:
             return None
         
@@ -208,7 +214,11 @@ class GalvoDetection:
             self.step_y += step_size_y
         
         self.last_time = time.time()
-        command = f'G{self.step_y},{self.step_x},'
+        command = f'G{self.step_x},{self.step_y},'
+        
+        # SharedState'teki motor pozisyonlarını güncelle
+        self.app_state.motor_position_x = self.step_y
+        self.app_state.motor_position_y = self.step_x
         
         if self.app_state.serial_connected and self.app_state.serial_port is not None:
             try:
@@ -226,6 +236,21 @@ class GalvoDetection:
         print(log_msg)
         
         return True
+    
+    def calculate_precision_tracking(self, laser_point, led_points):
+        """Hassas takip hesaplamaları - Şu an boş, ileride doldurulacak"""
+        if not self.app_state.precision_tracking_enabled:
+            return None
+        
+        # İlk hassas takip başlangıcında motorların son pozisyonundan başla
+        if len(self.laser_buffer) == 0 and len(self.led_buffer) == 0:
+            self.step_x = self.app_state.motor_position_y
+            self.step_y = self.app_state.motor_position_x
+            self.add_log(f"🎯 Hassas takip başlangıç pozisyonu: X={self.step_y}, Y={self.step_x}")
+        
+        # TODO: Hassas takip algoritması buraya gelecek
+        # Şimdilik None dönüyor
+        return None
     
     def run(self):
         """Ana algılama döngüsü"""
@@ -261,13 +286,21 @@ class GalvoDetection:
             # Frame'i işle
             laser_point, led_points = self.process_frame(frame)
             
-            # Takip hesapla
+            # Normal takip hesapla
             tracking_result = self.calculate_tracking(laser_point, led_points)
             
-            # Hareket gönder
+            # Hassas takip hesapla (eğer normal takip aktif değilse)
+            precision_tracking_result = None
+            if not self.app_state.tracking_enabled:
+                precision_tracking_result = self.calculate_precision_tracking(laser_point, led_points)
+            
+            # Hareket gönder (normal veya hassas takip)
             if tracking_result:
-                print(f"Takip sonucu: DiffX={tracking_result['diff_x']}, DiffY={tracking_result['diff_y']}")
+                # print(f"Takip sonucu: DiffX={tracking_result['diff_x']}, DiffY={tracking_result['diff_y']}")
                 self.send_movement(tracking_result['diff_x'], tracking_result['diff_y'])
+            elif precision_tracking_result:
+                # Hassas takip hareket gönderimi buraya gelecek
+                pass
     
 
         self.cleanup()
