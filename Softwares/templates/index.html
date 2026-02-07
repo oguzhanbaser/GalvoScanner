@@ -28,6 +28,7 @@
         header {
             text-align: center;
             margin-bottom: 20px;
+            position: relative;
         }
 
         h1 {
@@ -37,6 +38,50 @@
             -webkit-text-fill-color: transparent;
             background-clip: text;
             margin-bottom: 5px;
+        }
+
+        .cpu-info {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            padding: 10px 15px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .cpu-info.left {
+            left: 20px;
+        }
+
+        .cpu-info.right {
+            right: 20px;
+        }
+
+        .cpu-info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: #fff;
+        }
+
+        .cpu-info-item .icon {
+            font-size: 1.2rem;
+        }
+
+        .cpu-info-item .label {
+            color: #a0a0a0;
+        }
+
+        .cpu-info-item .value {
+            font-weight: 600;
+            color: #4ade80;
+            font-family: monospace;
         }
 
         .subtitle {
@@ -656,6 +701,19 @@
             .video-container {
                 grid-template-columns: 1fr;
             }
+
+            .cpu-info {
+                position: static;
+                transform: none;
+                margin: 10px auto;
+                width: fit-content;
+            }
+
+            header {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
         }
     </style>
 </head>
@@ -663,8 +721,22 @@
 <body>
     <div class="container">
         <header>
+            <div class="cpu-info left">
+                <div class="cpu-info-item">
+                    <span class="icon">🌡️</span>
+                    <span class="label">Sıcaklık:</span>
+                    <span class="value" id="cpuTemp">--°C</span>
+                </div>
+            </div>
             <h1>🎯 Galvo Scanner</h1>
             <p class="subtitle">Raspberry Pi Video Stream & Motor Control</p>
+            <div class="cpu-info right">
+                <div class="cpu-info-item">
+                    <span class="icon">⚡</span>
+                    <span class="label">CPU:</span>
+                    <span class="value" id="cpuUsage">--%</span>
+                </div>
+            </div>
         </header>
 
         <div class="controls">
@@ -965,9 +1037,19 @@
                     valueX.textContent = data.motor_x;
                     valueY.textContent = data.motor_y;
                 }
+
+                // CPU bilgilerini güncelle
+                if (data.cpu_temp !== undefined) {
+                    document.getElementById('cpuTemp').textContent = data.cpu_temp + '°C';
+                }
+                if (data.cpu_usage !== undefined) {
+                    document.getElementById('cpuUsage').textContent = data.cpu_usage + '%';
+                }
             } catch (error) {
                 document.getElementById('connectionDot').classList.remove('connected');
                 document.getElementById('connectionText').textContent = 'Seri Port: Hata';
+                document.getElementById('cpuTemp').textContent = '--°C';
+                document.getElementById('cpuUsage').textContent = '--%';
             }
         }
 

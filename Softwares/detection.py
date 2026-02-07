@@ -233,7 +233,7 @@ class GalvoDetection:
         
         log_msg = f"DiffX: {diff_x:+4d}, DiffY: {diff_y:+4d} | StepX: {self.step_x:+4d}, StepY: {self.step_y:+4d} | Komut: {command}"
         self.add_log(log_msg)
-        print(log_msg)
+        # print(log_msg)
         
         return True
     

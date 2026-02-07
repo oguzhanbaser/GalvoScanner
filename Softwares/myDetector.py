@@ -410,8 +410,12 @@ class MyDetector:
         else:
             mask = np.zeros_like(mask, dtype=np.uint8)
 
-        # Konturları bul - OPTIMIZE: copy() gereksiz, findContours artık mask'ı değiştirmiyor
-        contours, _ = cv2.findContours(mask_parlak, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Renk maskesi ile parlaklık maskesini birleştir - sadece ortak noktalar kalır
+        # LED'ler hem doğru renkte hem de parlak olmalı
+        mask_combined = cv2.bitwise_and(mask, mask_parlak)
+
+        # Konturları birleşik maskeden bul - hem renk hem parlaklık filtreli
+        contours, _ = cv2.findContours(mask_combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         led_merkezleri = []
         # areas değişkenini kaldırdık - kullanılmıyor
         

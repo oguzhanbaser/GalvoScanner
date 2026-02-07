@@ -8,6 +8,7 @@ from collections import deque
 import serial, threading
 from datetime import datetime
 from detection import GalvoDetection
+import psutil
 
 # Paylaşılan state sınıfı - tüm modüller arasında senkron state yönetimi
 class SharedState:
@@ -130,11 +131,24 @@ def video_feed(frame_type):
 @app.route('/api/status')
 def api_status():
     """Sistem durumunu döndür"""
+    # CPU sıcaklığını al
+    cpu_temp = None
+    try:
+        with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+            cpu_temp = round(float(f.read()) / 1000.0, 1)
+    except:
+        cpu_temp = 0.0
+    
+    # CPU kullanım yüzdesini al
+    cpu_usage = psutil.cpu_percent(interval=0.1)
+    
     return jsonify({
         'serial_connected': shared_state.serial_connected,
         'status': 'ok',
         'motor_x': shared_state.motor_position_x,
-        'motor_y': shared_state.motor_position_y
+        'motor_y': shared_state.motor_position_y,
+        'cpu_temp': cpu_temp,
+        'cpu_usage': cpu_usage
     })
 
 @app.route('/api/home', methods=['POST'])
