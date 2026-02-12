@@ -7,8 +7,12 @@ import time
 from collections import deque
 import serial
 from myDetector import MyDetector
-from myCamera import MyCamera
-from gpiozero import LED, MCP3008
+
+MAKE_TEST = False
+
+if not MAKE_TEST:
+    from myCamera import MyCamera
+    from gpiozero import LED, MCP3008
 
 class GalvoDetection:
     """Galvo tarayıcı için algılama ve kontrol sınıfı"""
@@ -27,19 +31,20 @@ class GalvoDetection:
         # Helper method for logging
         self.add_log = lambda msg: self.app_state.add_log(msg) if hasattr(self.app_state, 'add_log') else None
 
-        self.led1 = LED(17)
-        self.led2 = LED(27)
-        self.led3 = LED(18)
-        self.led4 = LED(22)
+        if not MAKE_TEST:
+            self.led1 = LED(17)
+            self.led2 = LED(27)
+            self.led3 = LED(18)
+            self.led4 = LED(22)
 
-        adcVal1 = MCP3008(channel=0)
-        adcVal2 = MCP3008(channel=1)
-        adcVal3 = MCP3008(channel=2)
-        adcVal4 = MCP3008(channel=3)
+            adcVal1 = MCP3008(channel=0)
+            adcVal2 = MCP3008(channel=1)
+            adcVal3 = MCP3008(channel=2)
+            adcVal4 = MCP3008(channel=3)
         
         # Varsayılan yapılandırma
         self.serial_port_name = self.config.get('serial_port', '/dev/ttyS0')
-        self.video_source = self.config.get('video_source', "http://192.168.19.18:4500/video_roi")
+        self.video_source = self.config.get('video_source', "http://192.168.19.221:5000/video")
         self.laser_settings = self.config.get('laser_settings', "laser_trackbar_settings.json")
         self.led_settings = self.config.get('led_settings', "led_settings.json")
         
@@ -56,17 +61,18 @@ class GalvoDetection:
         self.laser_buffer = deque(maxlen=3)
         self.led_buffer = deque(maxlen=3)
 
-        self.led1.on()
-        self.led2.on()
-        self.led3.on()
-        self.led4.on()
+        if not MAKE_TEST:
+            self.led1.on()
+            self.led2.on()
+            self.led3.on()
+            self.led4.on()
 
-        time.sleep(0.5)
+            time.sleep(0.5)
 
-        # self.led1.off()
-        self.led2.off()
-        self.led3.off()
-        self.led4.off()
+            # self.led1.off()
+            self.led2.off()
+            self.led3.off()
+            self.led4.off()
 
         if self.useCamera:
             self.camera = MyCamera()
@@ -220,7 +226,7 @@ class GalvoDetection:
         self.app_state.motor_position_x = self.step_y
         self.app_state.motor_position_y = self.step_x
         
-        if self.app_state.serial_connected and self.app_state.serial_port is not None:
+        if not MAKE_TEST and self.app_state.serial_connected and self.app_state.serial_port is not None:
             try:
                 self.app_state.serial_port.write(command.encode())
                 recData = self.wait_for_serial_data()
@@ -254,7 +260,8 @@ class GalvoDetection:
     
     def run(self):
         """Ana algılama döngüsü"""
-        self.init_serial()
+        if not MAKE_TEST:
+            self.init_serial()
         
         if not self.init_video():
             print("❌ Video kaynağına bağlanılamadı!")

@@ -384,8 +384,12 @@ class MyDetector:
         # PIXEL SUPPLEMENTATION (Inpainting) - tespit_led.py ile aynı
         gray = cv2.cvtColor(frame_processed, cv2.COLOR_BGR2GRAY)
         _, mask_parlak = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)
-        frame_inpainted = cv2.inpaint(frame_processed, mask_parlak, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
+        frame_inpainted = cv2.inpaint(frame_processed, mask_parlak, inpaintRadius=40, flags=cv2.INPAINT_TELEA)
         
+        cv2.imshow('LED Tespit - Inpaint Maskesi', mask_parlak)
+        cv2.imshow('LED Tespit - Inpainted Frame', frame_inpainted)
+        cv2.waitKey(10)
+
         # Blur ve HSV dönüşümü - OPTIMIZE: Gaussian blur daha hızlı (medianBlur yerine)
         # Not: medianBlur daha iyi gürültü temizler ama daha yavaş, deneysel olarak karşılaştır
         blurred = cv2.GaussianBlur(frame_inpainted, (5, 5), 0)  # Daha hızlı alternatif
@@ -413,6 +417,9 @@ class MyDetector:
         # Renk maskesi ile parlaklık maskesini birleştir - sadece ortak noktalar kalır
         # LED'ler hem doğru renkte hem de parlak olmalı
         mask_combined = cv2.bitwise_and(mask, mask_parlak)
+
+        cv2.imshow('LED Tespit - Renk Maskesi', mask)
+        cv2.imshow('LED Tespit - Birleşik Maskesi', mask_combined)
 
         # Konturları birleşik maskeden bul - hem renk hem parlaklık filtreli
         contours, _ = cv2.findContours(mask_combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
