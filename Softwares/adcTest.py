@@ -56,6 +56,10 @@ def main():
                 print(f"  Kanal {ch_num}: {raw_value:.4f} | "
                       f"Digital: {digital_value:4d} | "
                       f"Voltaj: {voltage:.3f}V")
+
+
+            x,y = GetQPDCoordinate([channels[i].value for i in range(4,8)])
+            print(f"  QPD Koordinatları: X={x:.4f}, Y={y:.4f}")
             
             print("-" * 80)
             time.sleep(1)  # 1 saniye bekle
@@ -67,6 +71,33 @@ def main():
         for adc in channels.values():
             adc.close()
         print("ADC kanalları kapatıldı.")
+
+def GetQPDCoordinate(vals):
+    """
+    QPD (Quadrant Photodiode) koordinatlarını hesaplar.
+    
+    Args:
+        vals (list): 4 kanal değerleri listesi
+    
+    Returns:
+        tuple: (x, y) koordinatları
+    """
+    if len(vals) != 4:
+        raise ValueError("QPD koordinat hesaplaması için 4 kanal değeri gerekir.")
+    
+    # QPD kanalları: [top-left, top-right, bottom-left, bottom-right]
+    # tr, tl, bl, br = vals
+    tl = vals[3]
+    tr = vals[1]
+    bl = vals[2]
+    br = vals[0]
+
+    # X ve Y koordinatlarını hesapla
+    x = (tr + br - tl - bl) / (tl + tr + bl + br)
+    y = (tl + tr - bl - br) / (tl + tr + bl + br)
+    
+    return x, y
+
 
 
 def read_single_channel(channel=0):

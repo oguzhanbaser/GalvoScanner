@@ -101,19 +101,23 @@ def send_galvo_command(command, pTimeout=2):
         return False, "Seri port bağlı değil"
 
 def generate_frames(frame_type):
-    """Video frame'lerini MJPEG formatında stream et"""
+    """Video frame'lerini MJPEG formatında stream et - sadece yeni frame geldiğinde encode yap"""
+    last_frame_id = None
     while True:
         with shared_state.frame_lock:
             frame = shared_state.current_frames.get(frame_type)
         
-        if frame is not None:
+        if frame is not None and id(frame) != last_frame_id:
+            # Yeni frame geldi — encode et ve gönder
+            last_frame_id = id(frame)
             ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if ret:
                 frame_bytes = buffer.tobytes()
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         else:
-            time.sleep(0.1)
+            # Frame yok veya değişmedi — CPU'yu boşa harcama
+            time.sleep(0.03)
 
 @app.route('/')
 def index():

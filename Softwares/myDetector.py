@@ -82,6 +82,39 @@ class MyDetector:
         
         # LED ayarlarını yükle
         self.load_led_settings()
+    
+    def prepare_frame(self, frame):
+        """Frame üzerinde inpainting işlemini bir kez yaparak sonucu döndürür.
+        Bu sonuç hem detect_laser() hem detect_leds() fonksiyonlarına geçirilir.
+        
+        Args:
+            frame: İşlenecek orijinal BGR frame
+            
+        Returns:
+            dict: {
+                'frame_inpainted': inpainting uygulanmış frame,
+                'mask_parlak': parlaklık maskesi
+            }
+        """
+        # Parlaklık eşiği: her iki tespit fonksiyonunun eşiğinin minimumunu kullan
+        # böylece tüm parlak noktalar yakalanır
+        parlaklik_esigi = min(self.parlaklik_esigi, self.led_params['PARLAKLIK_ESIGI'])
+        
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        _, mask_parlak = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)
+        
+        # Maskeyi genişlet — parlak piksellerin çevresine ~20px beyaz ekle
+        # Bu sayede küçük inpaintRadius ile geniş alan kapsanır (inpaintRadius=40 etkisi)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask_dilated = cv2.dilate(mask_parlak, kernel)
+        
+        # Küçük radius ile inpaint — dilate sayesinde geniş alan zaten maskelenmiş
+        frame_inpainted = cv2.inpaint(frame, mask_dilated, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+        
+        return {
+            'frame_inpainted': frame_inpainted,
+            'mask_parlak': mask_parlak
+        }
         
     
     def save_settings(self, settings=None):
@@ -200,14 +233,17 @@ class MyDetector:
             # Görüntüyü yeniden işle
             self.detect_laser()
     
-    def detect_laser(self, pFrame):
+    def detect_laser(self, pFrame, inpainted_data=None):
         """
         Görüntüyü işler ve laser noktalarını tespit eder.
+        
+        Args:
+            pFrame: İşlenecek orijinal BGR frame
+            inpainted_data: prepare_frame() çıktısı (opsiyonel). 
+                            Verilmezse inpainting bu fonksiyon içinde yapılır.
         """
         if pFrame is None:
             return None
-        
-        frame = pFrame.copy()
 
         cx = None
         cy = None
@@ -223,19 +259,21 @@ class MyDetector:
         h2_max = self.h2_max
         min_area = self.min_area
         max_area = self.max_area
-        parlaklik_esigi = self.parlaklik_esigi
         dairesellik_esigi = self.dairesellik_esigi
         
         if min_area == 0:
             min_area = 1
         
-        # PIXEL SUPPLEMENTATION (Inpainting)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        mask_parlak = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)[1]
-        frame_inpainted = cv2.inpaint(frame, mask_parlak, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
+        # PIXEL SUPPLEMENTATION (Inpainting) - önceden hazırlanmış veriyi kullan
+        if inpainted_data is not None:
+            frame_inpainted = inpainted_data['frame_inpainted'].copy()
+        else:
+            # Geriye dönük uyumluluk: inpainted_data verilmemişse kendi inpainting'ini yap
+            parlaklik_esigi = self.parlaklik_esigi
+            gray = cv2.cvtColor(pFrame, cv2.COLOR_BGR2GRAY)
+            mask_parlak = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)[1]
+            frame_inpainted = cv2.inpaint(pFrame, mask_parlak, inpaintRadius=40, flags=cv2.INPAINT_TELEA)
         
-        # OPTIMIZE: GaussianBlur genellikle medianBlur'dan daha hızlı
-        # Not: medianBlur gürültü temizlemede daha iyi ancak daha yavaş, gerekirse geri döndürülebilir
         blurred = cv2.GaussianBlur(frame_inpainted, (5, 5), 0)
         
         # BGR'den HSV'ye dönüştür
@@ -344,12 +382,14 @@ class MyDetector:
             'mask': mask
         }
     
-    def detect_leds(self, frame):
+    def detect_leds(self, frame, inpainted_data=None):
         """
         Frame üzerinde LED tespiti yapar (tespit_led.py'den uyarlanmış).
         
         Args:
             frame: İşlenecek görüntü frame'i (BGR formatında)
+            inpainted_data: prepare_frame() çıktısı (opsiyonel).
+                            Verilmezse inpainting bu fonksiyon içinde yapılır.
             
         Returns:
             dict: {
@@ -361,9 +401,6 @@ class MyDetector:
                 'inpaint_mask': inpaint_mask
             }
         """
-        # Frame kopyası al
-        frame_processed = frame.copy()
-        
         # Parametreleri çıkar
         h_min = self.led_params['H_MIN']
         h_max = self.led_params['H_MAX']
@@ -373,7 +410,6 @@ class MyDetector:
         v_max = self.led_params['V_MAX']
         min_alan = max(1, self.led_params['MIN_ALAN'])
         max_alan = self.led_params['MAX_ALAN']
-        parlaklik_esigi = self.led_params['PARLAKLIK_ESIGI']
         dairesellik_esigi = self.led_params['DAIRESELLIK_ESIGI']
         max_led_sayisi = self.led_params['MAX_LED_SAYISI']
         
@@ -381,18 +417,18 @@ class MyDetector:
         lower_bound = (h_min, s_min, v_min)
         upper_bound = (h_max, s_max, v_max)
         
-        # PIXEL SUPPLEMENTATION (Inpainting) - tespit_led.py ile aynı
-        gray = cv2.cvtColor(frame_processed, cv2.COLOR_BGR2GRAY)
-        _, mask_parlak = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)
-        frame_inpainted = cv2.inpaint(frame_processed, mask_parlak, inpaintRadius=40, flags=cv2.INPAINT_TELEA)
-        
-        cv2.imshow('LED Tespit - Inpaint Maskesi', mask_parlak)
-        cv2.imshow('LED Tespit - Inpainted Frame', frame_inpainted)
-        cv2.waitKey(10)
+        # PIXEL SUPPLEMENTATION (Inpainting) - önceden hazırlanmış veriyi kullan
+        if inpainted_data is not None:
+            frame_inpainted = inpainted_data['frame_inpainted'].copy()
+            mask_parlak = inpainted_data['mask_parlak']
+        else:
+            # Geriye dönük uyumluluk: inpainted_data verilmemişse kendi inpainting'ini yap
+            parlaklik_esigi = self.led_params['PARLAKLIK_ESIGI']
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            _, mask_parlak = cv2.threshold(gray, parlaklik_esigi, 255, cv2.THRESH_BINARY)
+            frame_inpainted = cv2.inpaint(frame, mask_parlak, inpaintRadius=40, flags=cv2.INPAINT_TELEA)
 
-        # Blur ve HSV dönüşümü - OPTIMIZE: Gaussian blur daha hızlı (medianBlur yerine)
-        # Not: medianBlur daha iyi gürültü temizler ama daha yavaş, deneysel olarak karşılaştır
-        blurred = cv2.GaussianBlur(frame_inpainted, (5, 5), 0)  # Daha hızlı alternatif
+        blurred = cv2.GaussianBlur(frame_inpainted, (5, 5), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         
         # Renk maskesi - OPTIMIZE: tuple kullan (np.array yerine)
@@ -418,8 +454,8 @@ class MyDetector:
         # LED'ler hem doğru renkte hem de parlak olmalı
         mask_combined = cv2.bitwise_and(mask, mask_parlak)
 
-        cv2.imshow('LED Tespit - Renk Maskesi', mask)
-        cv2.imshow('LED Tespit - Birleşik Maskesi', mask_combined)
+        # cv2.imshow('LED Tespit - Renk Maskesi', mask)
+        # cv2.imshow('LED Tespit - Birleşik Maskesi', mask_combined)
 
         # Konturları birleşik maskeden bul - hem renk hem parlaklık filtreli
         contours, _ = cv2.findContours(mask_combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)

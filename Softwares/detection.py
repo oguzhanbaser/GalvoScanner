@@ -7,6 +7,7 @@ import time
 from collections import deque
 import serial
 from myDetector import MyDetector
+from myQPD import MyQPD
 
 MAKE_TEST = False
 
@@ -42,6 +43,7 @@ class GalvoDetection:
             adcVal3 = MCP3008(channel=2)
             adcVal4 = MCP3008(channel=3)
         
+        self.qpd = MyQPD()
         # Varsayılan yapılandırma
         self.serial_port_name = self.config.get('serial_port', '/dev/ttyS0')
         self.video_source = self.config.get('video_source', "http://192.168.19.221:5000/video")
@@ -144,22 +146,26 @@ class GalvoDetection:
         return cmd_data
     
     def process_frame(self, frame):
-        """Tek bir frame'i işle - OPTIMIZE: Gereksiz copy() kaldırıldı"""
-        laser_point = self.detector.detect_laser(frame)
-        led_points = self.detector.detect_leds(frame)
-        
-        # cv2.imshow("frame"  , frame)
-        # cv2.waitKey(1)
+        """Tek bir frame'i işle - Inpainting tek seferde yapılır"""
+        try:
+            # Inpainting'i bir kez yap, sonucu her iki tespit fonksiyonuna geçir
+            inpainted_data = self.detector.prepare_frame(frame)
+            
+            laser_point = self.detector.detect_laser(frame, inpainted_data=inpainted_data)
+            led_points = self.detector.detect_leds(frame, inpainted_data=inpainted_data)
 
-        # Frame'leri güncelle - OPTIMIZE: annotated_frame zaten kopyalandı, tekrar copy() gereksiz
-        with self.app_state.frame_lock:
-            self.app_state.current_frames['original'] = frame
-            if led_points is not None:
-                self.app_state.current_frames['led'] = led_points['annotated_frame']
-            if laser_point is not None:
-                self.app_state.current_frames['laser'] = laser_point['annotated_frame']
-        
-        return laser_point, led_points
+            # Frame'leri güncelle
+            with self.app_state.frame_lock:
+                self.app_state.current_frames['original'] = frame
+                if led_points is not None:
+                    self.app_state.current_frames['led'] = led_points['annotated_frame']
+                if laser_point is not None:
+                    self.app_state.current_frames['laser'] = laser_point['annotated_frame']
+            
+            return laser_point, led_points
+        except Exception as e:
+            self.add_log(f"⚠️ Frame işleme hatası: {e}")
+            return None, None
     
     def calculate_tracking(self, laser_point, led_points):
         """Takip hesaplamalarını yap - OPTIMIZE: Numpy vektör işlemleri kullanıldı"""
@@ -175,28 +181,35 @@ class GalvoDetection:
         if laser_point is None or led_points is None:
             return None
         
-        self.laser_buffer.append(laser_point['center_point'])
-        self.led_buffer.append(led_points['center_point'])
-        
-        # OPTIMIZE: List comprehension yerine numpy array işlemleri - daha hızlı
-        laser_points = np.array(self.laser_buffer)
-        led_points_arr = np.array(self.led_buffer)
-        
-        laser_x = int(np.mean(laser_points[:, 0]))
-        laser_y = int(np.mean(laser_points[:, 1]))
-        led_x = int(np.mean(led_points_arr[:, 0]))
-        led_y = int(np.mean(led_points_arr[:, 1]))
-        
-        diff_x = laser_x - led_x
-        diff_y = laser_y - led_y
-        
-        TOLERANCE = 3
-        if abs(diff_x) < TOLERANCE:
-            diff_x = 0
-        if abs(diff_y) < TOLERANCE:
-            diff_y = 0
-        
-        return {'diff_x': diff_x, 'diff_y': diff_y}
+        try:
+            self.laser_buffer.append(laser_point['center_point'])
+            self.led_buffer.append(led_points['center_point'])
+            
+            # OPTIMIZE: List comprehension yerine numpy array işlemleri - daha hızlı
+            laser_points = np.array(self.laser_buffer)
+            led_points_arr = np.array(self.led_buffer)
+            
+            laser_x = int(np.mean(laser_points[:, 0]))
+            laser_y = int(np.mean(laser_points[:, 1]))
+            led_x = int(np.mean(led_points_arr[:, 0]))
+            led_y = int(np.mean(led_points_arr[:, 1]))
+            
+            diff_x = laser_x - led_x
+            diff_y = laser_y - led_y
+            
+            TOLERANCE = 3
+            if abs(diff_x) < TOLERANCE:
+                diff_x = 0
+            if abs(diff_y) < TOLERANCE:
+                diff_y = 0
+            
+            return {'diff_x': diff_x, 'diff_y': diff_y}
+        except Exception as e:
+            self.add_log(f"⚠️ Takip hesaplama hatası: {e}")
+            # Buffer'ları temizle - veri tutarsızlığı olabilir
+            self.laser_buffer.clear()
+            self.led_buffer.clear()
+            return None
     
     def send_movement(self, diff_x, diff_y):
         """Hareket komutu gönder"""
@@ -243,8 +256,63 @@ class GalvoDetection:
         
         return True
     
+    def send_precision_movement(self, precision_result):
+        """QPD tabanlı hassas takip için hareket komutu gönder"""
+        if not precision_result:
+            return False
+        
+        diff_x = precision_result['diff_x']
+        diff_y = precision_result['diff_y']
+        step_size_x = precision_result.get('step_size_x', 1)
+        step_size_y = precision_result.get('step_size_y', 1)
+        qpd_x = precision_result.get('qpd_x', 0)
+        qpd_y = precision_result.get('qpd_y', 0)
+        
+        if diff_x == 0 and diff_y == 0:
+            return False
+        
+        if time.time() - self.last_time <= 0.1:
+            return False
+        
+        # QPD koordinatlarına göre motor yönünü belirle
+        # Pozitif QPD X -> step_x azalt, Negatif QPD X -> step_x artır
+        if qpd_x > 0:
+            self.step_x -= step_size_x
+        elif qpd_x < 0:
+            self.step_x += step_size_x
+        
+        # Pozitif QPD Y -> step_y azalt, Negatif QPD Y -> step_y artır
+        if qpd_y > 0:
+            self.step_y -= step_size_y
+        elif qpd_y < 0:
+            self.step_y += step_size_y
+        
+        self.last_time = time.time()
+        command = f'G{self.step_x},{self.step_y},'
+        
+        # SharedState'teki motor pozisyonlarını güncelle
+        self.app_state.motor_position_x = self.step_y
+        self.app_state.motor_position_y = self.step_x
+        
+        if not MAKE_TEST and self.app_state.serial_connected and self.app_state.serial_port is not None:
+            try:
+                self.app_state.serial_port.write(command.encode())
+                recData = self.wait_for_serial_data()
+                if recData:
+                    cmd_data = self.parse_serial_command(recData)
+                    if cmd_data and (cmd_data['command'] != 'M' or cmd_data['data'] != 'O'):
+                        self.add_log(f"Beklenmeyen yanıt: {recData}")
+            except Exception as e:
+                self.add_log(f"Seri port hatası: {e}")
+        
+        log_msg = f"🎯 QPD: X={qpd_x:+.3f}, Y={qpd_y:+.3f} | StepX: {self.step_x:+4d}, StepY: {self.step_y:+4d} | Komut: {command}"
+        self.add_log(log_msg)
+        print(log_msg)
+        
+        return True
+    
     def calculate_precision_tracking(self, laser_point, led_points):
-        """Hassas takip hesaplamaları - Şu an boş, ileride doldurulacak"""
+        """QPD tabanlı hassas takip - QPD'den gelen koordinatlara göre aynaları (0,0) konumuna getirir"""
         if not self.app_state.precision_tracking_enabled:
             return None
         
@@ -254,9 +322,52 @@ class GalvoDetection:
             self.step_y = self.app_state.motor_position_x
             self.add_log(f"🎯 Hassas takip başlangıç pozisyonu: X={self.step_y}, Y={self.step_x}")
         
-        # TODO: Hassas takip algoritması buraya gelecek
-        # Şimdilik None dönüyor
-        return None
+        if MAKE_TEST:
+            return None  # Test modunda QPD kullanılamaz
+        
+        try:
+            # QPD'den koordinatları oku
+            qpd_x, qpd_y = self.qpd.get_coordinates()
+            
+            # Tolerans kontrolü - (0,0) noktasına yakınsa hareket etme
+            TOLERANCE = 0.05  # QPD koordinatları -1 ile +1 arasında olduğu için
+            
+            if abs(qpd_x) < TOLERANCE and abs(qpd_y) < TOLERANCE:
+                # Hedef konuma ulaşıldı
+                return None
+            
+            # Hareket yönünü ve büyüklüğünü hesapla
+            # QPD koordinatlarını motor adımlarına çevir
+            # Büyük sapmalar için daha fazla adım, küçük sapmalar için az adım
+            
+            # Proportional control - sapma büyük olduğunda daha hızlı git
+            step_size_x = 1
+            step_size_y = 1
+            
+            # Eğer sapma çok büyükse (>0.3), adım sayısını artır
+            if abs(qpd_x) > 0.3:
+                step_size_x = 2
+            if abs(qpd_y) > 0.3:
+                step_size_y = 2
+            
+            # Hareket yönünü belirle
+            # QPD koordinatları: pozitif X = sağ, negatif X = sol
+            #                   pozitif Y = yukarı, negatif Y = aşağı
+            diff_x = int(qpd_x * 100)  # Yön için basit ölçeklendirme
+            diff_y = int(qpd_y * 100)
+            
+            return {
+                'diff_x': diff_x,
+                'diff_y': diff_y,
+                'step_size_x': step_size_x,
+                'step_size_y': step_size_y,
+                'qpd_x': qpd_x,
+                'qpd_y': qpd_y
+            }
+            
+        except Exception as e:
+            self.add_log(f"⚠️ QPD okuma hatası: {e}")
+            return None
     
     def run(self):
         """Ana algılama döngüsü"""
@@ -269,6 +380,16 @@ class GalvoDetection:
         
         print("🚀 Algılama döngüsü başlatıldı")
         
+        try:
+            self._run_loop()
+        except Exception as e:
+            self.add_log(f"❌ Kritik hata: {e}")
+            print(f"❌ Algılama döngüsü hatası: {e}")
+        finally:
+            self.cleanup()
+    
+    def _run_loop(self):
+        """Ana algılama döngüsü - iç loop"""
         while True:
 
             # if self.app_state.serial_port is not None and self.app_state.serial_connected:
@@ -302,27 +423,35 @@ class GalvoDetection:
                 precision_tracking_result = self.calculate_precision_tracking(laser_point, led_points)
             
             # Hareket gönder (normal veya hassas takip)
-            if tracking_result:
-                # print(f"Takip sonucu: DiffX={tracking_result['diff_x']}, DiffY={tracking_result['diff_y']}")
-                self.send_movement(tracking_result['diff_x'], tracking_result['diff_y'])
-            elif precision_tracking_result:
-                # Hassas takip hareket gönderimi buraya gelecek
-                pass
-    
-
-        self.cleanup()
+            try:
+                if tracking_result:
+                    # print(f"Takip sonucu: DiffX={tracking_result['diff_x']}, DiffY={tracking_result['diff_y']}")
+                    self.send_movement(tracking_result['diff_x'], tracking_result['diff_y'])
+                elif precision_tracking_result:
+                    # Hassas takip - QPD tabanlı hareket gönderimi
+                    self.send_precision_movement(precision_tracking_result)
+            except Exception as e:
+                self.add_log(f"⚠️ Hareket gönderme hatası: {e}")
     
     def cleanup(self):
         """Kaynakları temizle"""
-        if self.cap and not self.useCamera:
-            self.cap.release()
-        if self.app_state.serial_port:
-            self.app_state.serial_port.close()
-        if self.useCamera and self.camera:
-            # Kamerayı durdur
-            try:
+        try:
+            if self.cap and not self.useCamera:
+                self.cap.release()
+        except Exception as e:
+            print(f"⚠️ Video kaynağı temizleme hatası: {e}")
+        
+        try:
+            if self.app_state.serial_port:
+                self.app_state.serial_port.close()
+        except Exception as e:
+            print(f"⚠️ Seri port temizleme hatası: {e}")
+        
+        try:
+            if self.useCamera and self.camera:
+                # Kamerayı durdur
                 self.camera.picam2.stop()
-            except:
-                pass
+        except Exception as e:
+            print(f"⚠️ Kamera temizleme hatası: {e}")
 
 
