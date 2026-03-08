@@ -31,8 +31,8 @@ class SharedState:
         self.precision_tracking_enabled = False
         
         # Motor pozisyonları (slider'ların son değerleri)
-        self.motor_position_x = 0
-        self.motor_position_y = 0
+        self.motor_position_x = 34
+        self.motor_position_y = -69
         
         # Global detector nesnesi
         self.detector = None
@@ -162,6 +162,9 @@ def api_home():
     # if success:
     #     # Ardından 0,0 pozisyonuna git
     #     send_galvo_command('G0,0,')
+    send_galvo_command('G34,-69,')  # Home komutundan sonra pozisyonu sıfırla
+    shared_state.motor_position_x = 34
+    shared_state.motor_position_y = -69
     return jsonify({
         'success': success,
         'message': message if not success else 'Home pozisyonuna gönderildi'

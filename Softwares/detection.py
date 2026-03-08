@@ -88,7 +88,7 @@ class GalvoDetection:
                 timeout=1, 
                 dsrdtr=True
             )
-            self.app_state.serial_port.write(b'G0,0,')
+            # self.app_state.serial_port.write(b'G0,0,')
             self.app_state.serial_connected = True
             
             print(f"✅ Seri port bağlandı: {self.serial_port_name}")
@@ -260,40 +260,41 @@ class GalvoDetection:
         """QPD tabanlı hassas takip için hareket komutu gönder"""
         if not precision_result:
             return False
-        
-        diff_x = precision_result['diff_x']
-        diff_y = precision_result['diff_y']
+
         step_size_x = precision_result.get('step_size_x', 1)
         step_size_y = precision_result.get('step_size_y', 1)
         qpd_x = precision_result.get('qpd_x', 0)
         qpd_y = precision_result.get('qpd_y', 0)
-        
-        if diff_x == 0 and diff_y == 0:
-            return False
-        
+
         if time.time() - self.last_time <= 0.1:
             return False
-        
+
+        # Her seferinde en güncel motor pozisyonunu al
+        current_step_x = self.app_state.motor_position_x
+        current_step_y = self.app_state.motor_position_y
+
         # QPD koordinatlarına göre motor yönünü belirle
-        # Pozitif QPD X -> step_x azalt, Negatif QPD X -> step_x artır
         if qpd_x > 0:
-            self.step_x -= step_size_x
+            current_step_x -= step_size_x
         elif qpd_x < 0:
-            self.step_x += step_size_x
-        
-        # Pozitif QPD Y -> step_y azalt, Negatif QPD Y -> step_y artır
+            current_step_x += step_size_x
+
         if qpd_y > 0:
-            self.step_y -= step_size_y
+            current_step_y += step_size_y
         elif qpd_y < 0:
-            self.step_y += step_size_y
-        
+            current_step_y -= step_size_y
+
         self.last_time = time.time()
-        command = f'G{self.step_x},{self.step_y},'
-        
+        command = f'G{current_step_y},{current_step_x},'
+
         # SharedState'teki motor pozisyonlarını güncelle
-        self.app_state.motor_position_x = self.step_y
-        self.app_state.motor_position_y = self.step_x
-        
+        self.app_state.motor_position_x = current_step_x
+        self.app_state.motor_position_y = current_step_y
+
+        # Aynı zamanda class içindeki step_x ve step_y de güncel tutulsun
+        self.step_x = current_step_x
+        self.step_y = current_step_y
+
         if not MAKE_TEST and self.app_state.serial_connected and self.app_state.serial_port is not None:
             try:
                 self.app_state.serial_port.write(command.encode())
@@ -304,11 +305,11 @@ class GalvoDetection:
                         self.add_log(f"Beklenmeyen yanıt: {recData}")
             except Exception as e:
                 self.add_log(f"Seri port hatası: {e}")
-        
-        log_msg = f"🎯 QPD: X={qpd_x:+.3f}, Y={qpd_y:+.3f} | StepX: {self.step_x:+4d}, StepY: {self.step_y:+4d} | Komut: {command}"
+
+        log_msg = f"🎯 QPD: X={qpd_x:+.3f}, Y={qpd_y:+.3f} | StepX: {current_step_x:+4d}, StepY: {current_step_y:+4d} | Komut: {command}"
         self.add_log(log_msg)
         print(log_msg)
-        
+
         return True
     
     def calculate_precision_tracking(self, laser_point, led_points):
@@ -345,20 +346,20 @@ class GalvoDetection:
             step_size_y = 1
             
             # Eğer sapma çok büyükse (>0.3), adım sayısını artır
-            if abs(qpd_x) > 0.3:
-                step_size_x = 2
-            if abs(qpd_y) > 0.3:
-                step_size_y = 2
+            # if abs(qpd_x) > 0.3:
+            #     step_size_x = 2
+            # if abs(qpd_y) > 0.3:
+            #     step_size_y = 2
             
             # Hareket yönünü belirle
             # QPD koordinatları: pozitif X = sağ, negatif X = sol
             #                   pozitif Y = yukarı, negatif Y = aşağı
-            diff_x = int(qpd_x * 100)  # Yön için basit ölçeklendirme
-            diff_y = int(qpd_y * 100)
+            # diff_x = int(qpd_x * 100)  # Yön için basit ölçeklendirme
+            # diff_y = int(qpd_y * 100)
             
             return {
-                'diff_x': diff_x,
-                'diff_y': diff_y,
+                # 'diff_x': diff_x,
+                # 'diff_y': diff_y,
                 'step_size_x': step_size_x,
                 'step_size_y': step_size_y,
                 'qpd_x': qpd_x,
@@ -396,6 +397,8 @@ class GalvoDetection:
             #     while self.app_state.serial_port.in_waiting > 0:
             #         print(self.app_state.serial_port.read())
 
+            # self.qpd.get_coordinates()  # QPD koordinatlarını sürekli oku (loglama için)
+
             if self.useCamera:
                 frame = self.camera.get_frame_roi()
                 ret = True
@@ -426,7 +429,7 @@ class GalvoDetection:
             try:
                 if tracking_result:
                     # print(f"Takip sonucu: DiffX={tracking_result['diff_x']}, DiffY={tracking_result['diff_y']}")
-                    self.send_movement(tracking_result['diff_x'], tracking_result['diff_y'])
+                    self.send_movement(tracking_result['step_size_x'], tracking_result['step_size_y'])
                 elif precision_tracking_result:
                     # Hassas takip - QPD tabanlı hareket gönderimi
                     self.send_precision_movement(precision_tracking_result)
