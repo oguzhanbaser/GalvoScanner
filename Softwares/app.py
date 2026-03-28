@@ -29,6 +29,11 @@ class SharedState:
         # Tracking durumu
         self.tracking_enabled = False
         self.precision_tracking_enabled = False
+
+        # Test modu
+        self.test_mode = True
+        self.test_target_x = 32
+        self.test_target_y = -68
         
         # Motor pozisyonları (slider'ların son değerleri)
         self.motor_position_x = 34
@@ -204,7 +209,43 @@ def api_tracking_start():
     """Takip sistemini başlat"""
     shared_state.tracking_enabled = True
     add_log("🚀 Takip sistemi başlatıldı")
+
+    # Test modunda ise belirtilen koordinata adım adım git
+    if shared_state.test_mode:
+        tx = shared_state.test_target_x
+        ty = shared_state.test_target_y
+        add_log(f"🧪 Test modu: X={tx}, Y={ty} koordinatına adım adım hareket başladı")
+        test_thread = threading.Thread(target=move_to_target_gradually, args=(tx, ty), daemon=True)
+        test_thread.start()
+
     return jsonify({'success': True, 'tracking': True})
+
+
+@app.route('/api/tracking/test', methods=['POST'])
+def api_tracking_test():
+    """Test modunu ve hedef koordinatları ayarla"""
+    data = request.get_json()
+    shared_state.test_mode = data.get('test_mode', False)
+    shared_state.test_target_x = data.get('x', 0)
+    shared_state.test_target_y = data.get('y', 0)
+    state = 'aktif' if shared_state.test_mode else 'devre dışı'
+    add_log(f"🧪 Test modu {state}: X={shared_state.test_target_x}, Y={shared_state.test_target_y}")
+    return jsonify({
+        'success': True,
+        'test_mode': shared_state.test_mode,
+        'x': shared_state.test_target_x,
+        'y': shared_state.test_target_y
+    })
+
+
+@app.route('/api/tracking/test/status')
+def api_tracking_test_status():
+    """Test modu durumunu döndür"""
+    return jsonify({
+        'test_mode': shared_state.test_mode,
+        'x': shared_state.test_target_x,
+        'y': shared_state.test_target_y
+    })
 
 @app.route('/api/tracking/stop', methods=['POST'])
 def api_tracking_stop():
@@ -342,6 +383,29 @@ def api_get_pixel_color():
 def api_selected_colors():
     """Seçilen renkleri döndür"""
     return jsonify(shared_state.selected_colors)
+
+
+def move_to_target_gradually(target_x, target_y):
+    """Test modunda hedef koordinatlara adım adım git (normal takip ile aynı hız)"""
+    STEP_INTERVAL = 0.1
+    while shared_state.tracking_enabled and shared_state.test_mode:
+        cur_x = shared_state.motor_position_x
+        cur_y = shared_state.motor_position_y
+
+        if cur_x == target_x and cur_y == target_y:
+            add_log(f"🧪 Test modu: Hedefe ulaşıldı X={target_x}, Y={target_y}")
+            break
+
+        new_x = cur_x + (1 if cur_x < target_x else -1 if cur_x > target_x else 0)
+        new_y = cur_y + (1 if cur_y < target_y else -1 if cur_y > target_y else 0)
+
+        command = f'G{new_y},{new_x},'
+        shared_state.motor_position_x = new_x
+        shared_state.motor_position_y = new_y
+        send_galvo_command(command)
+        add_log(f"🧪 Test hareketi: X={new_x}, Y={new_y} → Hedef: X={target_x}, Y={target_y}")
+
+        time.sleep(STEP_INTERVAL)
 
 
 def run_detection():

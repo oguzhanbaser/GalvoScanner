@@ -172,6 +172,10 @@ class GalvoDetection:
         if not self.app_state.tracking_enabled:
             return None
         
+        # Test modunda görüntü işleme takibi yapma - galvo sabit kalır
+        if self.app_state.test_mode:
+            return None
+        
         # İlk takip başlangıcında motorların son pozisyonundan başla
         if len(self.laser_buffer) == 0 and len(self.led_buffer) == 0:
             self.step_x = self.app_state.motor_position_y
@@ -266,7 +270,7 @@ class GalvoDetection:
         qpd_x = precision_result.get('qpd_x', 0)
         qpd_y = precision_result.get('qpd_y', 0)
 
-        if time.time() - self.last_time <= 0.1:
+        if time.time() - self.last_time <= 0.5:
             return False
 
         # Her seferinde en güncel motor pozisyonunu al
@@ -429,7 +433,8 @@ class GalvoDetection:
             try:
                 if tracking_result:
                     # print(f"Takip sonucu: DiffX={tracking_result['diff_x']}, DiffY={tracking_result['diff_y']}")
-                    self.send_movement(tracking_result['step_size_x'], tracking_result['step_size_y'])
+                    # self.send_movement(tracking_result['step_size_x'], tracking_result['step_size_y'])
+                    self.send_movement(tracking_result['diff_x'], tracking_result['diff_y'])
                 elif precision_tracking_result:
                     # Hassas takip - QPD tabanlı hareket gönderimi
                     self.send_precision_movement(precision_tracking_result)
